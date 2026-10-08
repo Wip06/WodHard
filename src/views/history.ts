@@ -2,7 +2,7 @@ import { choose, copyText, h, toast } from '../dom';
 import { dateLabel, plural, scoreLine } from '../format';
 import { navigate, type View } from '../router';
 import { buildHistory, deleteResult, findResult, findWod, sortedResults } from '../store';
-import { pageHead, resultRow, wodSheet } from './parts';
+import { pageHead, resultRow, splitsList, wodSheet } from './parts';
 
 const LIMITS = [
   { value: '10', label: 'Les 10 dernières' },
@@ -76,6 +76,7 @@ export function resultView(id: string): View | null {
         score.rpe !== undefined && h('span', { class: 'chip' }, `RPE ${score.rpe}/10`),
       ),
       score.notes && h('p', { class: 'description' }, score.notes),
+      'splits_sec' in score && score.splits_sec !== undefined && splitsList(wod, score.splits_sec),
     ),
     wodSheet(wod),
     h(

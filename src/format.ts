@@ -1,6 +1,6 @@
 import type { Movement, Score, Wod, WodType } from './types';
 
-const TYPE_LABELS: Record<WodType, string> = { amrap: 'AMRAP', emom: 'EMOM', for_time: 'For Time' };
+const TYPE_LABELS: Record<WodType, string> = { amrap: 'AMRAP', emom: 'EMOM', for_time: 'For Time', hyrox: 'Hyrox' };
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const decimal = (n: number) => n.toLocaleString('fr-FR', { maximumFractionDigits: 2 });
@@ -52,6 +52,10 @@ export function wodSummary(wod: Wod): string {
       const volume = wod.rep_scheme ? wod.rep_scheme.join('-') : wod.rounds > 1 ? `${wod.rounds} tours` : '';
       return `${volume} For Time · cap ${duration(wod.time_cap_sec)}`.trim();
     }
+    case 'hyrox': {
+      const cap = wod.time_cap_sec === undefined ? '' : ` · cap ${duration(wod.time_cap_sec)}`;
+      return `Enchaînement de ${plural(wod.segments.length, 'segment')}${cap}`;
+    }
   }
 }
 
@@ -64,23 +68,49 @@ export function scoreLine(wod: Wod, score: Score): string {
     const total = wod.type === 'emom' ? `/${wod.intervals}` : '';
     return `${score.intervals_completed}${total} intervalles`;
   }
+  if ('segments_completed' in score) {
+    const total = wod.type === 'hyrox' ? `/${wod.segments.length}` : '';
+    return `Arrêt après ${score.segments_completed}${total} segments`;
+  }
   return score.finished ? clock(score.time_sec) : `Time cap · ${plural(score.reps_completed, 'rep')}`;
 }
 
 /** Date locale au format AAAA-MM-JJ (toISOString donnerait la date UTC). */
-export function today(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+const toIso = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+
+function fromIso(isoDate: string): Date {
+  const [year = 1970, month = 1, day = 1] = isoDate.split('-').map(Number);
+  return new Date(year, month - 1, day);
 }
+
+export const today = () => toIso(new Date());
+
+export function addDays(isoDate: string, days: number): string {
+  const date = fromIso(isoDate);
+  date.setDate(date.getDate() + days);
+  return toIso(date);
+}
+
+/** Lundi de la semaine qui contient la date. */
+export const mondayOf = (isoDate: string) => addDays(isoDate, -((fromIso(isoDate).getDay() + 6) % 7));
 
 /** "2026-10-09" → "ven. 9 oct." (avec l'année si ce n'est pas l'année en cours). */
 export function dateLabel(isoDate: string): string {
-  const [year = 1970, month = 1, day = 1] = isoDate.split('-').map(Number);
-  const sameYear = year === new Date().getFullYear();
-  return new Date(year, month - 1, day).toLocaleDateString('fr-FR', {
+  const date = fromIso(isoDate);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString('fr-FR', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
     year: sameYear ? undefined : 'numeric',
   });
+}
+
+/** Comme dateLabel, mais « Aujourd’hui », « Demain » et « Hier » pour les jours proches. */
+export function dayLabel(isoDate: string): string {
+  const now = today();
+  if (isoDate === now) return 'Aujourd’hui';
+  if (isoDate === addDays(now, 1)) return 'Demain';
+  if (isoDate === addDays(now, -1)) return 'Hier';
+  return dateLabel(isoDate);
 }

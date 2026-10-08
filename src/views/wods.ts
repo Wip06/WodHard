@@ -1,11 +1,23 @@
 import { unlockAudio } from '../audio';
 import { choose, h, toast } from '../dom';
-import { dateLabel, scoreLine, wodSummary } from '../format';
-import { navigate, type View } from '../router';
-import { addWod, deleteWod, findWod, getWods, resultsFor, setSession } from '../store';
+import { dateLabel, dayLabel, plural, scoreLine, today, wodSummary } from '../format';
+import { navigate, render, type View } from '../router';
+import {
+  addPlan,
+  addProgram,
+  addWod,
+  deleteWod,
+  findWod,
+  getWods,
+  removePlan,
+  resultsFor,
+  setSession,
+  visiblePlan,
+  type PlannedWod,
+} from '../store';
 import { newClock } from '../timer';
 import type { SavedWod } from '../types';
-import { parseWod } from '../validate';
+import { isDate, parseImport } from '../validate';
 import { pageHead, resultRow, typeBadge, wodSheet } from './parts';
 
 const MAX_ERRORS = 12;
@@ -32,20 +44,53 @@ function wodCard(saved: SavedWod): HTMLElement {
   );
 }
 
+function planCard({ entry, saved, done }: PlannedWod): HTMLElement {
+  const now = today();
+  const state = done ? 'done' : entry.date === now ? 'today' : entry.date < now ? 'late' : '';
+  return h(
+    'li',
+    null,
+    h(
+      'a',
+      { class: `card planned ${state}`, href: `#/wod/${saved.id}` },
+      h(
+        'span',
+        { class: 'card-top' },
+        h('span', { class: 'day' }, dayLabel(entry.date)),
+        done
+          ? h('span', { class: 'chip rx' }, '✓ Fait')
+          : state === 'late'
+            ? h('span', { class: 'chip late' }, 'En retard')
+            : typeBadge(saved.wod),
+      ),
+      h('strong', { class: 'card-title' }, saved.wod.title),
+      h('span', { class: 'card-sub' }, done ? scoreLine(done.wod, done.score) : wodSummary(saved.wod)),
+    ),
+  );
+}
+
 export function wodListView(): View {
-  const wods = [...getWods()].reverse();
+  const plan = visiblePlan();
+  const planned = new Set(plan.map((row) => row.saved.id));
+  const others = [...getWods()].reverse().filter((saved) => !planned.has(saved.id));
+
   const el = h(
     'section',
     { class: 'page' },
     h('header', { class: 'brand' }, h('h1', null, 'WOD', h('span', null, 'HARD'))),
     h('a', { class: 'btn primary block', href: '#/add' }, '+ Coller un WOD'),
-    wods.length > 0
-      ? h('ul', { class: 'cards' }, wods.map(wodCard))
-      : h(
-          'p',
-          { class: 'empty' },
-          'Aucun WOD pour l’instant. Génère-en un dans ton projet Claude, copie le JSON, puis colle-le ici.',
-        ),
+    plan.length > 0 && [
+      h('h2', { class: 'section-title' }, 'Programme'),
+      h('ul', { class: 'cards' }, plan.map(planCard)),
+    ],
+    plan.length > 0 && others.length > 0 && h('h2', { class: 'section-title' }, 'Autres WOD'),
+    others.length > 0 && h('ul', { class: 'cards' }, others.map(wodCard)),
+    getWods().length === 0 &&
+      h(
+        'p',
+        { class: 'empty' },
+        'Aucun WOD pour l’instant. Génère-en un dans ton projet Claude, copie le JSON, puis colle-le ici.',
+      ),
   );
   return { el, tab: 'wods' };
 }
@@ -58,14 +103,14 @@ export function addWodView(): View {
     spellcheck: 'false',
     autocapitalize: 'off',
     autocomplete: 'off',
-    'aria-label': 'JSON du WOD',
+    'aria-label': 'JSON du WOD ou du programme',
   });
   const errorBox = h('div', { class: 'errors', role: 'alert', hidden: true });
 
   const showErrors = (errors: string[]) => {
     const extra = errors.length - MAX_ERRORS;
     errorBox.replaceChildren(
-      h('strong', null, 'Ce WOD n’est pas valide :'),
+      h('strong', null, 'Ce JSON n’est pas valide :'),
       h(
         'ul',
         null,
@@ -77,12 +122,18 @@ export function addWodView(): View {
   };
 
   const submit = () => {
-    if (input.value.trim() === '') return showErrors(['Colle d’abord le JSON du WOD.']);
-    const checked = parseWod(input.value);
+    if (input.value.trim() === '') return showErrors(['Colle d’abord le JSON du WOD ou du programme.']);
+    const checked = parseImport(input.value);
     if (!checked.ok) return showErrors(checked.errors);
-    const { saved, duplicate } = addWod(checked.value);
-    toast(duplicate ? 'Ce WOD était déjà enregistré' : 'WOD enregistré');
-    navigate(`/wod/${saved.id}`, true);
+
+    if (checked.value.kind === 'wod') {
+      const { saved, duplicate } = addWod(checked.value.wod);
+      toast(duplicate ? 'Ce WOD était déjà enregistré' : 'WOD enregistré');
+      return navigate(`/wod/${saved.id}`, true);
+    }
+    const { added, planned } = addProgram(checked.value.items);
+    toast(`${plural(added, 'WOD ajouté')}, ${planned} au programme`);
+    navigate('/', true);
   };
 
   const paste = async () => {
@@ -101,7 +152,11 @@ export function addWodView(): View {
     'section',
     { class: 'page' },
     pageHead('Nouveau WOD', { href: '#/', label: 'WOD' }),
-    h('p', { class: 'lead' }, 'Copie le JSON généré par ton projet Claude, puis colle-le ici.'),
+    h(
+      'p',
+      { class: 'lead' },
+      'Copie le JSON généré par ton projet Claude, puis colle-le ici : un WOD seul ou un programme de plusieurs WOD.',
+    ),
     h('button', { class: 'btn primary block', onclick: paste }, 'Coller depuis le presse-papiers'),
     input,
     errorBox,
@@ -115,16 +170,28 @@ export function wodDetailView(id: string): View | null {
   if (!saved) return null;
   const { wod } = saved;
   const past = resultsFor(id);
+  const pending = visiblePlan().filter((row) => row.saved.id === id && !row.done);
 
   const start = () => {
     unlockAudio();
-    setSession({ stage: 'timer', wod, wod_id: id, clock: newClock(Date.now()), rounds: 0 });
+    setSession({ stage: 'timer', wod, wod_id: id, clock: newClock(Date.now()), rounds: 0, marks: [] });
     navigate('/timer');
   };
 
   const scoreWithoutTimer = () => {
-    setSession({ stage: 'score', wod, wod_id: id, rounds: 0, completed: false });
+    setSession({ stage: 'score', wod, wod_id: id, rounds: 0, marks: [], completed: false });
     navigate('/score');
+  };
+
+  const planDate = h('input', { type: 'date', value: today(), 'aria-label': 'Date prévue' });
+  const plan = () => {
+    if (!isDate(planDate.value)) return toast('Choisis une date');
+    toast(addPlan(id, planDate.value) ? `Planifié : ${dayLabel(planDate.value)}` : 'Déjà prévu ce jour-là');
+    render();
+  };
+  const unplan = (entryId: string) => {
+    removePlan(entryId);
+    render();
   };
 
   const remove = async () => {
@@ -154,6 +221,20 @@ export function wodDetailView(id: string): View | null {
       h('p', { class: 'hint' }, 'Départ après un décompte de 10 secondes.'),
       h('button', { class: 'btn block', onclick: scoreWithoutTimer }, 'Saisir un score sans chrono'),
     ),
+    h(
+      'section',
+      { class: 'stack' },
+      h('h2', { class: 'section-title' }, 'Programme'),
+      pending.map(({ entry }) =>
+        h(
+          'div',
+          { class: 'plan-line' },
+          h('span', null, `Prévu : ${dayLabel(entry.date)}`),
+          h('button', { class: 'btn ghost', onclick: () => unplan(entry.id) }, 'Retirer'),
+        ),
+      ),
+      h('div', { class: 'row' }, planDate, h('button', { class: 'btn', onclick: plan }, 'Planifier')),
+    ),
     past.length > 0 &&
       h(
         'section',
@@ -165,7 +246,7 @@ export function wodDetailView(id: string): View | null {
           past.map((result) => resultRow(result, false)),
         ),
       ),
-    h('button', { class: 'btn ghost danger block', onclick: remove }, 'Supprimer ce WOD'),
+    h('button', { class: 'btn ghost danger block', onclick: () => void remove() }, 'Supprimer ce WOD'),
   );
   return { el, tab: 'wods' };
 }

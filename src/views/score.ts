@@ -2,9 +2,10 @@ import { choose, h, toast } from '../dom';
 import { today, wodSummary } from '../format';
 import { navigate, type View } from '../router';
 import { findResult, getSession, newId, saveResult, setSession, type Session } from '../store';
+import { splitsFromMarks } from '../timer';
 import type { ForTimeWod, Result, Score, Wod } from '../types';
 import { isDate, validateScore } from '../validate';
-import { pageHead, typeBadge, wodPlan } from './parts';
+import { pageHead, splitsList, typeBadge, wodPlan } from './parts';
 
 /** Valeurs de départ du formulaire : champs de tous les types de score, tous facultatifs. */
 interface Draft {
@@ -14,9 +15,18 @@ interface Draft {
   finished?: boolean;
   time_sec?: number;
   reps_completed?: number;
+  segments_completed?: number;
+  splits_sec?: number[];
   rx: boolean;
   rpe?: number;
   notes?: string;
+}
+
+interface Context {
+  wod: Wod;
+  draft: Draft;
+  editing?: Result;
+  wodId?: string;
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -25,6 +35,8 @@ const FIELD_LABELS: Record<string, string> = {
   intervals_completed: 'Intervalles tenus',
   time_sec: 'Temps',
   reps_completed: 'Reps réalisées',
+  segments_completed: 'Segments terminés',
+  splits_sec: 'Temps par segment',
   rpe: 'RPE',
   notes: 'Notes',
 };
@@ -46,10 +58,10 @@ function repsInRounds(wod: ForTimeWod, rounds: number): number | undefined {
 }
 
 function draftFromSession(session: Extract<Session, { stage: 'score' }>): Draft {
-  const { wod, elapsedMs, completed, rounds } = session;
+  const { wod, elapsedMs, completed, rounds, marks } = session;
   const draft: Draft = { rx: true };
   if (elapsedMs === undefined) {
-    if (wod.type === 'for_time') draft.finished = true;
+    if (wod.type === 'for_time' || wod.type === 'hyrox') draft.finished = true;
     return draft;
   }
   switch (wod.type) {
@@ -64,8 +76,25 @@ function draftFromSession(session: Extract<Session, { stage: 'score' }>): Draft 
       draft.finished = completed;
       if (completed) draft.time_sec = Math.max(1, Math.floor(elapsedMs / 1000));
       else draft.reps_completed = repsInRounds(wod, rounds);
+      break;
+    case 'hyrox':
+      draft.finished = completed;
+      if (marks.length > 0) draft.splits_sec = splitsFromMarks(marks);
+      // Le temps final est celui du dernier segment validé, pour rester égal à la somme des segments.
+      if (completed) draft.time_sec = Math.max(1, Math.floor((marks.at(-1) ?? elapsedMs) / 1000));
+      else draft.segments_completed = marks.length;
   }
   return draft;
+}
+
+function context(resultId?: string): Context | null {
+  if (resultId) {
+    const editing = findResult(resultId);
+    return editing ? { wod: editing.wod, draft: { ...editing.score }, editing } : null;
+  }
+  const session = getSession();
+  if (!session || session.stage !== 'score') return null;
+  return { wod: session.wod, draft: draftFromSession(session), wodId: session.wod_id };
 }
 
 function numberInput(value: number | undefined, label: string, max?: number): HTMLInputElement {
@@ -86,27 +115,13 @@ const field = (label: string, ...controls: (HTMLElement | string)[]) =>
 const readNumber = (input: HTMLInputElement) => (input.value.trim() === '' ? undefined : Number(input.value));
 
 export function scoreView(resultId?: string): View | null {
-  let wod: Wod;
-  let draft: Draft;
-  let editing: Result | undefined;
-  let wodId: string | undefined;
-
-  if (resultId) {
-    editing = findResult(resultId);
-    if (!editing) return null;
-    wod = editing.wod;
-    draft = { ...editing.score };
-  } else {
-    const session = getSession();
-    if (!session || session.stage !== 'score') return null;
-    wod = session.wod;
-    wodId = session.wod_id;
-    draft = draftFromSession(session);
-  }
+  const found = context(resultId);
+  if (!found) return null;
+  const { wod, draft, editing, wodId } = found;
 
   // Champs propres au type de WOD ; `read` renvoie leur valeur au format du score.
   let read: () => Record<string, unknown>;
-  const typeFields: HTMLElement[] = [];
+  const typeFields: (HTMLElement | false)[] = [];
 
   switch (wod.type) {
     case 'amrap': {
@@ -122,30 +137,62 @@ export function scoreView(resultId?: string): View | null {
       read = () => ({ intervals_completed: readNumber(done) });
       break;
     }
-    case 'for_time': {
+    case 'for_time':
+    case 'hyrox': {
+      // Les deux se terminent par un temps ; sinon on note où l'on s'est arrêté (reps ou segments).
+      const segmentCount = wod.type === 'hyrox' ? wod.segments.length : null;
+      const splits = segmentCount === null ? undefined : draft.splits_sec;
       let finished = draft.finished ?? true;
       const minutes = numberInput(draft.time_sec === undefined ? undefined : Math.floor(draft.time_sec / 60), 'Minutes');
       const seconds = numberInput(draft.time_sec === undefined ? undefined : draft.time_sec % 60, 'Secondes', 59);
-      const reps = numberInput(draft.reps_completed, 'Reps réalisées');
+      const partial =
+        segmentCount === null
+          ? numberInput(draft.reps_completed, 'Reps réalisées')
+          : numberInput(draft.segments_completed, 'Segments terminés', segmentCount);
       const timeField = field('Temps', minutes, 'min', seconds, 's');
-      const repsField = field('Reps réalisées au time cap', reps);
+      const partialField =
+        segmentCount === null
+          ? field('Reps réalisées au time cap', partial)
+          : field('Segments terminés', partial, `sur ${segmentCount}`);
       const yes = h('button', { type: 'button', class: 'btn grow', onclick: () => setFinished(true) }, 'Terminé');
-      const no = h('button', { type: 'button', class: 'btn grow', onclick: () => setFinished(false) }, 'Time cap atteint');
+      const no = h(
+        'button',
+        { type: 'button', class: 'btn grow', onclick: () => setFinished(false) },
+        segmentCount === null ? 'Time cap atteint' : 'Arrêté avant la fin',
+      );
       const setFinished = (value: boolean) => {
         finished = value;
         yes.setAttribute('aria-pressed', String(value));
         no.setAttribute('aria-pressed', String(!value));
         timeField.hidden = !value;
-        repsField.hidden = value;
+        partialField.hidden = value;
       };
       setFinished(finished);
-      typeFields.push(h('div', { class: 'segmented' }, yes, no), timeField, repsField);
+      typeFields.push(
+        h('div', { class: 'segmented' }, yes, no),
+        timeField,
+        partialField,
+        splits !== undefined &&
+          h(
+            'div',
+            { class: 'field' },
+            h('span', { class: 'field-label' }, 'Temps par segment, relevés au chrono'),
+            splitsList(wod, splits),
+          ),
+      );
       read = () => {
-        if (!finished) return { finished, reps_completed: readNumber(reps) };
-        const min = readNumber(minutes);
-        const sec = readNumber(seconds);
-        const time = min === undefined && sec === undefined ? undefined : (min ?? 0) * 60 + (sec ?? 0);
-        return { finished, time_sec: time };
+        if (finished) {
+          const min = readNumber(minutes);
+          const sec = readNumber(seconds);
+          const time = min === undefined && sec === undefined ? undefined : (min ?? 0) * 60 + (sec ?? 0);
+          // Les temps par segment ne sont gardés que s'ils correspondent encore au temps final.
+          const keep = splits?.length === segmentCount && time === draft.time_sec;
+          return { finished, time_sec: time, ...(keep && { splits_sec: splits }) };
+        }
+        const done = readNumber(partial);
+        if (segmentCount === null) return { finished, reps_completed: done };
+        const keep = splits !== undefined && splits.length === done;
+        return { finished, segments_completed: done, ...(keep && { splits_sec: splits }) };
       };
       break;
     }

@@ -16,7 +16,7 @@ export type Cue = 'tick' | 'go' | 'end';
 
 export interface Frame {
   phase: 'countdown' | 'running' | 'done';
-  /** Valeur affichée : compte à rebours (décompte, AMRAP, EMOM) ou temps écoulé (For Time). */
+  /** Valeur affichée : compte à rebours (décompte, AMRAP, EMOM) ou temps écoulé (For Time, Hyrox). */
   seconds: number;
   /** Intervalle EMOM en cours, à partir de 0. */
   interval: number;
@@ -40,6 +40,9 @@ export function totalMs(wod: Wod): number {
       return wod.interval_sec * wod.intervals * 1000;
     case 'for_time':
       return wod.time_cap_sec * 1000;
+    case 'hyrox':
+      // Sans time cap, le chrono tourne jusqu'au dernier segment.
+      return wod.time_cap_sec === undefined ? Infinity : wod.time_cap_sec * 1000;
   }
 }
 
@@ -49,7 +52,7 @@ export function frame(wod: Wod, ms: number): Frame {
   if (ms >= total) {
     return {
       phase: 'done',
-      seconds: wod.type === 'for_time' ? wod.time_cap_sec : 0,
+      seconds: wod.type === 'for_time' || wod.type === 'hyrox' ? total / 1000 : 0,
       interval: wod.type === 'emom' ? wod.intervals - 1 : 0,
     };
   }
@@ -61,8 +64,15 @@ export function frame(wod: Wod, ms: number): Frame {
       return { phase: 'running', seconds: Math.ceil((span - (ms % span)) / 1000), interval: Math.floor(ms / span) };
     }
     case 'for_time':
+    case 'hyrox':
       return { phase: 'running', seconds: Math.floor(ms / 1000), interval: 0 };
   }
+}
+
+/** Durée de chaque segment en secondes entières, à partir des temps de passage cumulés. */
+export function splitsFromMarks(marksMs: number[]): number[] {
+  const cumulative = marksMs.map((ms) => Math.floor(ms / 1000));
+  return cumulative.map((sec, i) => sec - (cumulative[i - 1] ?? 0));
 }
 
 /**

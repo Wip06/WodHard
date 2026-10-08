@@ -7,7 +7,12 @@ import type {
   ForTimeCapped,
   ForTimeFinished,
   ForTimeWod,
+  HyroxFinished,
+  HyroxStopped,
+  HyroxWod,
   Movement,
+  PlanEntry,
+  ProgramItem,
   Result,
   SavedWod,
   Score,
@@ -212,8 +217,18 @@ function checkWod(raw: unknown, path: string, errors: string[]): Wod | undefined
       }
       return compact<ForTimeWod>({ schema_version: 1, type: 'for_time', ...base, time_cap_sec, rounds, rep_scheme, movements });
     }
+    case 'hyrox': {
+      unknownKeys(raw, [...WOD_KEYS, 'segments', 'time_cap_sec'], path, errors);
+      const segments = checkMovements(raw.segments, at('segments'), errors, true);
+      const time_cap_sec =
+        raw.time_cap_sec === undefined
+          ? undefined
+          : checkNumber(raw.time_cap_sec, at('time_cap_sec'), errors, 'integer');
+      if (errors.length > before || segments === undefined) return undefined;
+      return compact<HyroxWod>({ schema_version: 1, type: 'hyrox', ...base, time_cap_sec, segments });
+    }
     default:
-      return fail(errors, at('type'), 'doit valoir "amrap", "emom" ou "for_time"');
+      return fail(errors, at('type'), 'doit valoir "amrap", "emom", "for_time" ou "hyrox"');
   }
 }
 
@@ -262,7 +277,39 @@ function checkScore(raw: unknown, wod: Wod, path: string, errors: string[]): Sco
       }
       return fail(errors, at('finished'), 'doit valoir true ou false');
     }
+    case 'hyrox': {
+      const total = wod.segments.length;
+      if (raw.finished === true) {
+        unknownKeys(raw, [...SCORE_KEYS, 'finished', 'time_sec', 'splits_sec'], path, errors);
+        const time_sec = checkNumber(raw.time_sec, at('time_sec'), errors, 'integer');
+        const splits_sec = checkSplits(raw.splits_sec, at('splits_sec'), errors, total);
+        if (errors.length > before || time_sec === undefined) return undefined;
+        return compact<HyroxFinished>({ finished: true, time_sec, splits_sec, ...common });
+      }
+      if (raw.finished === false) {
+        unknownKeys(raw, [...SCORE_KEYS, 'finished', 'segments_completed', 'splits_sec'], path, errors);
+        const segments_completed = checkNumber(raw.segments_completed, at('segments_completed'), errors, 'count');
+        if (segments_completed !== undefined && segments_completed > total) {
+          fail(errors, at('segments_completed'), `ne peut pas dépasser ${total}`);
+        }
+        const splits_sec = checkSplits(raw.splits_sec, at('splits_sec'), errors, segments_completed);
+        if (errors.length > before || segments_completed === undefined) return undefined;
+        return compact<HyroxStopped>({ finished: false, segments_completed, splits_sec, ...common });
+      }
+      return fail(errors, at('finished'), 'doit valoir true ou false');
+    }
   }
+}
+
+function checkSplits(raw: unknown, path: string, errors: string[], segments?: number): number[] | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) return fail(errors, path, 'doit être une liste de durées en secondes');
+  const before = errors.length;
+  const splits = raw.map((sec, i) => checkNumber(sec, `${path}[${i}]`, errors, 'count'));
+  if (segments !== undefined && raw.length !== segments) {
+    fail(errors, path, `contient ${raw.length} temps pour ${segments} segments terminés`);
+  }
+  return errors.length === before ? splits.filter(isDefined) : undefined;
 }
 
 function checkId(value: unknown, path: string, errors: string[]): string | undefined {
@@ -286,6 +333,28 @@ function checkResult(raw: unknown, path: string, errors: string[]): Result | und
   const score = wod ? checkScore(raw.score, wod, join(path, 'score'), errors) : undefined;
   if (id === undefined || date === undefined || !wod || !score) return undefined;
   return compact<Result>({ id, wod_id, date, wod, score });
+}
+
+function checkPlanEntry(raw: unknown, path: string, errors: string[]): PlanEntry | undefined {
+  if (!isObj(raw)) return fail(errors, path, 'doit être un objet');
+  const id = checkId(raw.id, join(path, 'id'), errors);
+  const wod_id = checkId(raw.wod_id, join(path, 'wod_id'), errors);
+  const result_id = raw.result_id === undefined ? undefined : checkId(raw.result_id, join(path, 'result_id'), errors);
+  const date = isDate(raw.date) ? raw.date : fail(errors, join(path, 'date'), 'date attendue au format AAAA-MM-JJ');
+  if (id === undefined || wod_id === undefined || date === undefined) return undefined;
+  return compact<PlanEntry>({ id, date, wod_id, result_id });
+}
+
+function checkProgramItem(raw: unknown, path: string, errors: string[]): ProgramItem | undefined {
+  if (!isObj(raw)) return fail(errors, path, 'doit être un objet { "date": …, "wod": … }');
+  const before = errors.length;
+  unknownKeys(raw, ['date', 'wod'], path, errors);
+  if (raw.date !== undefined && !isDate(raw.date)) {
+    fail(errors, join(path, 'date'), 'date attendue au format AAAA-MM-JJ');
+  }
+  const wod = checkWod(raw.wod, join(path, 'wod'), errors);
+  if (errors.length > before || !wod) return undefined;
+  return compact<ProgramItem>({ date: isDate(raw.date) ? raw.date : undefined, wod });
 }
 
 /** Isole le JSON d'une réponse copiée en entier (bloc ```json, phrase autour…). */
@@ -316,6 +385,34 @@ export function parseWod(text: string): Validation<Wod> {
   return json.ok ? validateWod(json.value) : json;
 }
 
+export function validateProgram(raw: unknown): Validation<ProgramItem[]> {
+  if (!isObj(raw) || raw.wodhard_program !== 1) {
+    return { ok: false, errors: ['Ce JSON n’est pas un programme WODHARD ("wodhard_program": 1 absent).'] };
+  }
+  const errors: string[] = [];
+  unknownKeys(raw, ['wodhard_program', 'wods'], '', errors);
+  if (!Array.isArray(raw.wods) || raw.wods.length === 0) {
+    fail(errors, 'wods', 'doit être une liste non vide de { "date": …, "wod": … }');
+    return { ok: false, errors };
+  }
+  const items = raw.wods.map((item, i) => checkProgramItem(item, `wods[${i}]`, errors)).filter(isDefined);
+  return result(items, errors);
+}
+
+export type Import = { kind: 'wod'; wod: Wod } | { kind: 'program'; items: ProgramItem[] };
+
+/** Lit ce qui est collé dans l'appli : un WOD seul ou un programme de plusieurs WOD. */
+export function parseImport(text: string): Validation<Import> {
+  const json = parseJson(text);
+  if (!json.ok) return json;
+  if (isObj(json.value) && 'wodhard_program' in json.value) {
+    const program = validateProgram(json.value);
+    return program.ok ? { ok: true, value: { kind: 'program', items: program.value } } : program;
+  }
+  const wod = validateWod(json.value);
+  return wod.ok ? { ok: true, value: { kind: 'wod', wod: wod.value } } : wod;
+}
+
 export function validateScore(raw: unknown, wod: Wod): Validation<Score> {
   const errors: string[] = [];
   return result(checkScore(raw, wod, '', errors), errors);
@@ -328,11 +425,27 @@ export function validateBackup(raw: unknown): Validation<AppData> {
   const errors: string[] = [];
   if (!Array.isArray(raw.wods)) fail(errors, 'wods', 'doit être une liste');
   if (!Array.isArray(raw.results)) fail(errors, 'results', 'doit être une liste');
-  if (!Array.isArray(raw.wods) || !Array.isArray(raw.results)) return { ok: false, errors };
+  // `plan` est absent des sauvegardes faites avant l'ajout du programme.
+  const rawPlan = raw.plan ?? [];
+  if (!Array.isArray(rawPlan)) fail(errors, 'plan', 'doit être une liste');
+  if (!Array.isArray(raw.wods) || !Array.isArray(raw.results) || !Array.isArray(rawPlan)) {
+    return { ok: false, errors };
+  }
 
   const wods = raw.wods.map((item, i) => checkSavedWod(item, `wods[${i}]`, errors)).filter(isDefined);
   const results = raw.results.map((item, i) => checkResult(item, `results[${i}]`, errors)).filter(isDefined);
-  return result({ wods, results }, errors);
+  const wodIds = new Set(wods.map((saved) => saved.id));
+  const resultIds = new Set(results.map((done) => done.id));
+  // Une entrée de programme dont le WOD ou la séance n'existe plus est remise en cohérence, pas refusée.
+  const plan = rawPlan
+    .map((item, i) => checkPlanEntry(item, `plan[${i}]`, errors))
+    .filter(isDefined)
+    .filter((entry) => wodIds.has(entry.wod_id))
+    .map((entry) => {
+      if (entry.result_id !== undefined && !resultIds.has(entry.result_id)) delete entry.result_id;
+      return entry;
+    });
+  return result({ wods, results, plan }, errors);
 }
 
 export function parseBackup(text: string): Validation<AppData> {

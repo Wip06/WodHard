@@ -1,5 +1,5 @@
 import { h } from '../dom';
-import { dateLabel, duration, kg, quantity, scoreLine, typeLabel, wodSummary } from '../format';
+import { clock, dateLabel, duration, kg, movementText, quantity, scoreLine, typeLabel, wodSummary } from '../format';
 import type { Movement, Result, Wod } from '../types';
 
 export function pageHead(title: string, back?: { href: string; label: string }): HTMLElement {
@@ -83,7 +83,34 @@ export function wodPlan(wod: Wod): HTMLElement {
         movementList(wod.movements),
       );
     }
+    case 'hyrox': {
+      const cap = wod.time_cap_sec === undefined ? '' : ` (time cap ${duration(wod.time_cap_sec)})`;
+      return h(
+        'div',
+        { class: 'plan' },
+        h('p', { class: 'rule' }, `Enchaîne les segments dans l’ordre, le plus vite possible${cap} :`),
+        movementList(wod.segments),
+      );
+    }
   }
+}
+
+/** Temps de chaque segment d'un Hyrox, en face du segment correspondant. */
+export function splitsList(wod: Wod, splits: number[]): HTMLElement | false {
+  if (wod.type !== 'hyrox' || splits.length === 0) return false;
+  return h(
+    'ol',
+    { class: 'splits' },
+    splits.map((sec, i) => {
+      const segment = wod.segments[i];
+      return h(
+        'li',
+        null,
+        h('span', { class: 'what' }, segment ? movementText(segment) : `Segment ${i + 1}`),
+        h('span', { class: 'split' }, clock(sec)),
+      );
+    }),
+  );
 }
 
 /** Fiche complète d'un WOD : titre, contexte, échauffement et contenu. */

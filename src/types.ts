@@ -41,7 +41,14 @@ export interface ForTimeWod extends WodBase {
   movements: Movement[];
 }
 
-export type Wod = AmrapWod | EmomWod | ForTimeWod;
+export interface HyroxWod extends WodBase {
+  type: 'hyrox';
+  /** Segments enchaînés une seule fois, dans l'ordre : course, station, course… */
+  segments: Movement[];
+  time_cap_sec?: number;
+}
+
+export type Wod = AmrapWod | EmomWod | ForTimeWod | HyroxWod;
 export type WodType = Wod['type'];
 
 interface ScoreBase {
@@ -70,7 +77,22 @@ export interface ForTimeCapped extends ScoreBase {
 }
 
 export type ForTimeScore = ForTimeFinished | ForTimeCapped;
-export type Score = AmrapScore | EmomScore | ForTimeScore;
+
+/** `splits_sec` : durée de chaque segment terminé, dans l'ordre. Absent si le score est saisi à la main. */
+export interface HyroxFinished extends ScoreBase {
+  finished: true;
+  time_sec: number;
+  splits_sec?: number[];
+}
+
+export interface HyroxStopped extends ScoreBase {
+  finished: false;
+  segments_completed: number;
+  splits_sec?: number[];
+}
+
+export type HyroxScore = HyroxFinished | HyroxStopped;
+export type Score = AmrapScore | EmomScore | ForTimeScore | HyroxScore;
 
 export interface SavedWod {
   id: string;
@@ -87,9 +109,24 @@ export interface Result {
   score: Score;
 }
 
+/** Un WOD prévu à une date. `result_id` est renseigné une fois la séance faite. */
+export interface PlanEntry {
+  id: string;
+  date: string;
+  wod_id: string;
+  result_id?: string;
+}
+
+/** Un élément d'un programme collé : un WOD, éventuellement daté. */
+export interface ProgramItem {
+  date?: string;
+  wod: Wod;
+}
+
 export interface AppData {
   wods: SavedWod[];
   results: Result[];
+  plan: PlanEntry[];
 }
 
 export interface Backup extends AppData {
@@ -101,4 +138,6 @@ export interface Backup extends AppData {
 export interface HistoryExport {
   wodhard_history: 1;
   entries: { date: string; wod: Wod; score: Score }[];
+  /** WOD du programme qui restent à faire. */
+  planned?: { date: string; wod: Wod }[];
 }

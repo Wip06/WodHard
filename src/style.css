@@ -13,6 +13,7 @@
   --amrap: var(--accent);
   --emom: #5cc8ff;
   --for-time: #ff9f43;
+  --hyrox: #c79bff;
   --radius: 14px;
   --gutter: 16px;
   --tabs-height: 56px;
@@ -282,6 +283,10 @@ a {
   --tone: var(--for-time);
 }
 
+.badge.hyrox {
+  --tone: var(--hyrox);
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -301,6 +306,77 @@ a {
 .chip.rx {
   border-color: color-mix(in srgb, var(--accent) 50%, transparent);
   color: var(--accent);
+}
+
+.chip.late {
+  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
+  color: var(--warn);
+}
+
+/* Programme */
+
+.day {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.card.planned.today {
+  border-color: var(--accent);
+}
+
+.card.planned.today .day {
+  color: var(--accent);
+}
+
+.card.planned.done .card-title {
+  color: var(--muted);
+}
+
+.plan-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-left: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-weight: 650;
+}
+
+.splits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 0 1.6em;
+  color: var(--muted);
+}
+
+.splits li::marker {
+  font-variant-numeric: tabular-nums;
+}
+
+.splits li > * {
+  vertical-align: top;
+}
+
+.splits .what {
+  display: inline-block;
+  width: calc(100% - 4.5em);
+  color: var(--text);
+}
+
+.splits .split {
+  display: inline-block;
+  width: 4.5em;
+  color: var(--text);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .score {
@@ -715,6 +791,21 @@ textarea {
 .scheme .past {
   text-decoration: line-through;
   opacity: 0.6;
+}
+
+.segment-now {
+  font-size: 1.5rem;
+}
+
+.segment-now .movement {
+  grid-template-columns: auto 1fr;
+}
+
+.segment-next {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .timer-controls {

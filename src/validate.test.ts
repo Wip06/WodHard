@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import instructions from '../docs/instructions-projet-claude.md?raw';
 import type { Wod } from './types';
-import { parseWod, validateBackup, validateScore, validateWod } from './validate';
+import { parseImport, parseWod, validateBackup, validateScore, validateWod } from './validate';
 
-// Les quatre exemples donnés dans les instructions du projet Claude.
+// Les exemples donnés dans les instructions du projet Claude.
 const cindy = {
   schema_version: 1,
   type: 'amrap',
@@ -48,6 +49,19 @@ const fiveRounds = {
   ],
 };
 
+const hyrox = {
+  schema_version: 1,
+  type: 'hyrox',
+  title: 'Mini Hyrox',
+  description: 'Allure course soutenable, stations sans pause.',
+  segments: [
+    { name: 'Run', distance_m: 1000 },
+    { name: 'SkiErg', distance_m: 1000 },
+    { name: 'Run', distance_m: 1000 },
+    { name: 'Wall ball', reps: 50, load_kg: 6 },
+  ],
+};
+
 function valid(raw: unknown): Wod {
   const checked = validateWod(raw);
   if (!checked.ok) throw new Error(checked.errors.join('\n'));
@@ -60,7 +74,7 @@ function errorsOf(raw: unknown): string[] {
 }
 
 describe('validateWod', () => {
-  it.each([cindy, emom, fran, fiveRounds])('accepte l’exemple « $title » sans le modifier', (example) => {
+  it.each([cindy, emom, fran, fiveRounds, hyrox])('accepte l’exemple « $title » sans le modifier', (example) => {
     expect(valid(example)).toEqual(example);
   });
 
@@ -111,7 +125,18 @@ describe('validateWod', () => {
   });
 
   it('refuse un type inconnu', () => {
-    expect(errorsOf({ ...cindy, type: 'tabata' })).toEqual(['type : doit valoir "amrap", "emom" ou "for_time"']);
+    expect(errorsOf({ ...cindy, type: 'tabata' })).toEqual([
+      'type : doit valoir "amrap", "emom", "for_time" ou "hyrox"',
+    ]);
+  });
+
+  it('valide les segments d’un Hyrox comme des mouvements, avec un time cap facultatif', () => {
+    expect(validateWod({ ...hyrox, time_cap_sec: 3600 }).ok).toBe(true);
+    expect(errorsOf({ ...hyrox, segments: [{ name: 'Run' }] })).toEqual([
+      'segments[0] : il faut exactement un champ parmi reps, distance_m, calories, duration_sec',
+    ]);
+    expect(errorsOf({ ...hyrox, segments: [] })).toEqual(['segments : doit contenir au moins un mouvement']);
+    expect(errorsOf({ ...hyrox, rounds: 2 })).toEqual(['rounds : champ inconnu']);
   });
 
   it('accepte un slot EMOM vide (repos) mais pas plus de slots que d’intervalles', () => {
@@ -133,6 +158,42 @@ describe('parseWod', () => {
   });
 });
 
+describe('parseImport', () => {
+  it('reconnaît un WOD seul', () => {
+    expect(parseImport(JSON.stringify(cindy))).toEqual({ ok: true, value: { kind: 'wod', wod: cindy } });
+  });
+
+  it('reconnaît un programme, avec ou sans date par WOD', () => {
+    const program = { wodhard_program: 1, wods: [{ date: '2026-10-12', wod: fran }, { wod: hyrox }] };
+    expect(parseImport(JSON.stringify(program))).toEqual({
+      ok: true,
+      value: { kind: 'program', items: [{ date: '2026-10-12', wod: fran }, { wod: hyrox }] },
+    });
+  });
+
+  it('localise les erreurs dans le programme et refuse le tout', () => {
+    const program = {
+      wodhard_program: 1,
+      wods: [
+        { date: '12/10/2026', wod: fran },
+        { date: '2026-10-14', wod: { ...cindy, duration_sec: 0 }, note: 'x' },
+      ],
+    };
+    expect(parseImport(JSON.stringify(program))).toEqual({
+      ok: false,
+      errors: [
+        'wods[0].date : date attendue au format AAAA-MM-JJ',
+        'wods[1].note : champ inconnu',
+        'wods[1].wod.duration_sec : doit être un entier ≥ 1',
+      ],
+    });
+  });
+
+  it('refuse un programme vide', () => {
+    expect(parseImport('{"wodhard_program":1,"wods":[]}').ok).toBe(false);
+  });
+});
+
 describe('validateScore', () => {
   it('valide le score propre à chaque type', () => {
     expect(validateScore({ rounds: 12, extra_reps: 5, rx: true, rpe: 8 }, valid(cindy)).ok).toBe(true);
@@ -144,6 +205,21 @@ describe('validateScore', () => {
   it('refuse un score qui ne correspond pas au type du WOD', () => {
     expect(validateScore({ finished: true, time_sec: 332, rx: true }, valid(cindy))).toMatchObject({ ok: false });
     expect(validateScore({ finished: true, reps_completed: 72, rx: true }, valid(fran))).toMatchObject({ ok: false });
+  });
+
+  it('valide un score Hyrox et ses temps par segment', () => {
+    const wod = valid(hyrox);
+    expect(validateScore({ finished: true, time_sec: 1500, splits_sec: [300, 280, 320, 600], rx: true }, wod).ok).toBe(true);
+    expect(validateScore({ finished: true, time_sec: 1500, rx: true }, wod).ok).toBe(true);
+    expect(validateScore({ finished: false, segments_completed: 2, splits_sec: [300, 280], rx: true }, wod).ok).toBe(true);
+    expect(validateScore({ finished: true, time_sec: 1500, splits_sec: [300, 280], rx: true }, wod)).toEqual({
+      ok: false,
+      errors: ['splits_sec : contient 2 temps pour 4 segments terminés'],
+    });
+    expect(validateScore({ finished: false, segments_completed: 5, rx: true }, wod)).toEqual({
+      ok: false,
+      errors: ['segments_completed : ne peut pas dépasser 4'],
+    });
   });
 
   it('borne les intervalles tenus et le RPE', () => {
@@ -166,8 +242,24 @@ describe('validateBackup', () => {
     results: [{ id: 'r1', wod_id: 'a1', date: '2026-10-08', wod: fran, score: { finished: true, time_sec: 332, rx: true } }],
   };
 
-  it('relit une sauvegarde complète', () => {
-    expect(validateBackup(backup)).toEqual({ ok: true, value: { wods: backup.wods, results: backup.results } });
+  it('relit une sauvegarde faite avant l’ajout du programme', () => {
+    expect(validateBackup(backup)).toEqual({
+      ok: true,
+      value: { wods: backup.wods, results: backup.results, plan: [] },
+    });
+  });
+
+  it('relit le programme et écarte ce qui ne pointe plus sur rien', () => {
+    const plan = [
+      { id: 'p1', date: '2026-10-08', wod_id: 'a1', result_id: 'r1' },
+      { id: 'p2', date: '2026-10-12', wod_id: 'a1', result_id: 'disparu' },
+      { id: 'p3', date: '2026-10-13', wod_id: 'disparu' },
+    ];
+    const checked = validateBackup({ ...backup, plan });
+    expect(checked.ok && checked.value.plan).toEqual([
+      { id: 'p1', date: '2026-10-08', wod_id: 'a1', result_id: 'r1' },
+      { id: 'p2', date: '2026-10-12', wod_id: 'a1' },
+    ]);
   });
 
   it('refuse un fichier qui n’est pas une sauvegarde', () => {
@@ -180,5 +272,13 @@ describe('validateBackup', () => {
       ok: false,
       errors: ['results[0].date : date attendue au format AAAA-MM-JJ'],
     });
+  });
+});
+
+describe('instructions du projet Claude', () => {
+  it('ne donnent que des exemples acceptés par l’application', () => {
+    const blocks = [...instructions.matchAll(/```json\n([\s\S]*?)```/g)].map((match) => match[1] ?? '');
+    expect(blocks).toHaveLength(6);
+    for (const block of blocks) expect(parseImport(block)).toMatchObject({ ok: true });
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { COUNTDOWN_MS, cuesBetween, elapsedMs, frame, newClock, pause, resume } from './timer';
-import type { AmrapWod, EmomWod, ForTimeWod } from './types';
+import { COUNTDOWN_MS, cuesBetween, elapsedMs, frame, newClock, pause, resume, splitsFromMarks } from './timer';
+import type { AmrapWod, EmomWod, ForTimeWod, HyroxWod } from './types';
 
 const amrap: AmrapWod = {
   schema_version: 1,
@@ -26,6 +26,16 @@ const forTime: ForTimeWod = {
   time_cap_sec: 120,
   rounds: 1,
   movements: [{ name: 'Burpee', reps: 50 }],
+};
+
+const hyrox: HyroxWod = {
+  schema_version: 1,
+  type: 'hyrox',
+  title: 'Mini Hyrox',
+  segments: [
+    { name: 'Run', distance_m: 1000 },
+    { name: 'Wall ball', reps: 50 },
+  ],
 };
 
 describe('horloge', () => {
@@ -63,6 +73,25 @@ describe('frame', () => {
   it('compte le temps écoulé d’un For Time jusqu’au time cap', () => {
     expect(frame(forTime, 65_900)).toMatchObject({ phase: 'running', seconds: 65 });
     expect(frame(forTime, 500_000)).toMatchObject({ phase: 'done', seconds: 120 });
+  });
+});
+
+describe('Hyrox', () => {
+  it('compte le temps sans limite quand il n’y a pas de time cap', () => {
+    expect(frame(hyrox, 5_400_500)).toMatchObject({ phase: 'running', seconds: 5400 });
+    expect(cuesBetween(hyrox, -3_100, 0)).toEqual(['tick', 'tick', 'tick', 'go']);
+    expect(cuesBetween(hyrox, 3_599_000, 3_600_000)).toEqual([]);
+  });
+
+  it('s’arrête au time cap quand il y en a un', () => {
+    const capped = { ...hyrox, time_cap_sec: 1800 };
+    expect(frame(capped, 1_800_000)).toMatchObject({ phase: 'done', seconds: 1800 });
+    expect(cuesBetween(capped, 1_799_950, 1_800_050)).toEqual(['end']);
+  });
+
+  it('déduit la durée de chaque segment des temps de passage', () => {
+    expect(splitsFromMarks([])).toEqual([]);
+    expect(splitsFromMarks([300_400, 580_900, 901_200])).toEqual([300, 280, 321]);
   });
 });
 
