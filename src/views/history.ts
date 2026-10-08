@@ -1,0 +1,90 @@
+import { choose, copyText, h, toast } from '../dom';
+import { dateLabel, plural, scoreLine } from '../format';
+import { navigate, type View } from '../router';
+import { buildHistory, deleteResult, findResult, findWod, sortedResults } from '../store';
+import { pageHead, resultRow, wodSheet } from './parts';
+
+const LIMITS = [
+  { value: '10', label: 'Les 10 dernières' },
+  { value: '30', label: 'Les 30 dernières' },
+  { value: 'all', label: 'Tout' },
+];
+const DEFAULT_LIMIT = '30';
+
+export function historyView(): View {
+  const results = sortedResults();
+  const limit = h(
+    'select',
+    { 'aria-label': 'Séances à copier' },
+    LIMITS.map(({ value, label }) => h('option', { value, selected: value === DEFAULT_LIMIT }, label)),
+  );
+
+  const copy = async () => {
+    const history = buildHistory(limit.value === 'all' ? undefined : Number(limit.value));
+    const copied = await copyText(JSON.stringify(history));
+    toast(copied ? `${plural(history.entries.length, 'séance')} dans le presse-papiers` : 'Copie impossible');
+  };
+
+  const el = h(
+    'section',
+    { class: 'page' },
+    pageHead('Historique'),
+    results.length > 0
+      ? [
+          h(
+            'div',
+            { class: 'stack' },
+            h('button', { class: 'btn primary block', onclick: () => void copy() }, 'Copier mon historique'),
+            h('label', { class: 'inline-field' }, h('span', null, 'Séances copiées, en JSON pour Claude :'), limit),
+          ),
+          h('ul', { class: 'cards' }, results.map((result) => resultRow(result))),
+        ]
+      : h('p', { class: 'empty' }, 'Aucune séance pour l’instant. Lance un WOD et saisis ton score : il apparaîtra ici.'),
+  );
+  return { el, tab: 'history' };
+}
+
+export function resultView(id: string): View | null {
+  const result = findResult(id);
+  if (!result) return null;
+  const { wod, score } = result;
+  const inLibrary = result.wod_id !== undefined && findWod(result.wod_id) !== undefined;
+
+  const remove = async () => {
+    const confirmed = await choose('Supprimer cette séance ?', `${wod.title}, ${dateLabel(result.date)}.`, [
+      { label: 'Supprimer', value: true, kind: 'danger' },
+      { label: 'Annuler', value: false },
+    ]);
+    if (!confirmed) return;
+    deleteResult(id);
+    toast('Séance supprimée');
+    navigate('/history', true);
+  };
+
+  const el = h(
+    'section',
+    { class: 'page' },
+    pageHead(dateLabel(result.date), { href: '#/history', label: 'Historique' }),
+    h(
+      'div',
+      { class: 'scoreboard' },
+      h('strong', { class: 'score' }, scoreLine(wod, score)),
+      h(
+        'span',
+        { class: 'result-line' },
+        h('span', { class: `chip ${score.rx ? 'rx' : ''}` }, score.rx ? 'Rx' : 'Scaled'),
+        score.rpe !== undefined && h('span', { class: 'chip' }, `RPE ${score.rpe}/10`),
+      ),
+      score.notes && h('p', { class: 'description' }, score.notes),
+    ),
+    wodSheet(wod),
+    h(
+      'div',
+      { class: 'stack' },
+      h('a', { class: 'btn block', href: `#/score/${id}` }, 'Modifier le score'),
+      inLibrary && h('a', { class: 'btn block', href: `#/wod/${result.wod_id}` }, 'Refaire ce WOD'),
+      h('button', { class: 'btn ghost danger block', onclick: () => void remove() }, 'Supprimer cette séance'),
+    ),
+  );
+  return { el, tab: 'history' };
+}
