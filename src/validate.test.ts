@@ -124,6 +124,12 @@ describe('validateWod', () => {
     ]);
   });
 
+  it('refuse un champ optionnel laissé vide plutôt qu’omis', () => {
+    expect(errorsOf({ ...cindy, warmup: '' })).toEqual(['warmup : doit être un texte non vide']);
+    expect(errorsOf({ ...cindy, description: null })).toEqual(['description : doit être un texte non vide']);
+    expect(errorsOf({ ...hyrox, time_cap_sec: null })).toEqual(['time_cap_sec : doit être un entier ≥ 1']);
+  });
+
   it('refuse un type inconnu', () => {
     expect(errorsOf({ ...cindy, type: 'tabata' })).toEqual([
       'type : doit valoir "amrap", "emom", "for_time" ou "hyrox"',
@@ -278,7 +284,7 @@ describe('validateBackup', () => {
 describe('instructions du projet Claude', () => {
   it('ne donnent que des exemples acceptés par l’application', () => {
     const blocks = [...instructions.matchAll(/```json\n([\s\S]*?)```/g)].map((match) => match[1] ?? '');
-    expect(blocks).toHaveLength(6);
+    expect(blocks).toHaveLength(7);
     for (const block of blocks) expect(parseImport(block)).toMatchObject({ ok: true });
   });
 });
