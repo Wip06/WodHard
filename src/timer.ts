@@ -12,7 +12,7 @@ export interface Clock {
   resumedAt: number | null;
 }
 
-export type Cue = 'tick' | 'go' | 'end';
+export type Cue = 'tick' | 'go' | 'rest' | 'end';
 
 export interface Frame {
   phase: 'countdown' | 'running' | 'done';
@@ -76,21 +76,30 @@ export function splitsFromMarks(marksMs: number[]): number[] {
 }
 
 /**
- * Signaux sonores dus dans la fenêtre ]fromMs, toMs] : un bip long au départ et à chaque
- * changement d'intervalle, 3-2-1 juste avant, et un signal de fin.
+ * Signaux sonores dus dans la fenêtre ]fromMs, toMs]. `boundaryAt` donne le signal d'une borne
+ * (départ, changement d'intervalle, fin) ; un 3-2-1 est ajouté dans les trois secondes qui la précèdent.
  */
-export function cuesBetween(wod: Wod, fromMs: number, toMs: number): Cue[] {
-  const total = totalMs(wod);
-  const span = wod.type === 'emom' ? wod.interval_sec * 1000 : total;
-  const isBoundary = (t: number) => t === 0 || t === total || (t > 0 && t < total && t % span === 0);
-
+export function cuesIn(boundaryAt: (ms: number) => Cue | null, fromMs: number, toMs: number): Cue[] {
   const cues: Cue[] = [];
   for (let s = Math.floor(fromMs / 1000) + 1; s * 1000 <= toMs; s++) {
     const t = s * 1000;
-    if (t > total) break;
-    if (t === total) cues.push('end');
-    else if (isBoundary(t)) cues.push('go');
-    else if (isBoundary(t + 1000) || isBoundary(t + 2000) || isBoundary(t + 3000)) cues.push('tick');
+    const cue = boundaryAt(t);
+    if (cue) cues.push(cue);
+    else if (boundaryAt(t + 1000) || boundaryAt(t + 2000) || boundaryAt(t + 3000)) cues.push('tick');
   }
   return cues;
+}
+
+/** Signaux d'un WOD : bip long au départ et à chaque changement d'intervalle, signal de fin. */
+export function cuesBetween(wod: Wod, fromMs: number, toMs: number): Cue[] {
+  const total = totalMs(wod);
+  const span = wod.type === 'emom' ? wod.interval_sec * 1000 : total;
+  return cuesIn(
+    (t) => {
+      if (t === total) return 'end';
+      return t === 0 || (t > 0 && t < total && t % span === 0) ? 'go' : null;
+    },
+    fromMs,
+    toMs,
+  );
 }

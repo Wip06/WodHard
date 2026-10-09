@@ -57,9 +57,14 @@ interface ScoreBase {
   notes?: string;
 }
 
+/**
+ * `splits_sec`, quand il est présent : temps relevés au chrono, dans l'ordre. Un par tour terminé
+ * (AMRAP, For Time) ou par segment terminé (Hyrox). Absent si le score est saisi à la main.
+ */
 export interface AmrapScore extends ScoreBase {
   rounds: number;
   extra_reps: number;
+  splits_sec?: number[];
 }
 
 export interface EmomScore extends ScoreBase {
@@ -69,16 +74,17 @@ export interface EmomScore extends ScoreBase {
 export interface ForTimeFinished extends ScoreBase {
   finished: true;
   time_sec: number;
+  splits_sec?: number[];
 }
 
 export interface ForTimeCapped extends ScoreBase {
   finished: false;
   reps_completed: number;
+  splits_sec?: number[];
 }
 
 export type ForTimeScore = ForTimeFinished | ForTimeCapped;
 
-/** `splits_sec` : durée de chaque segment terminé, dans l'ordre. Absent si le score est saisi à la main. */
 export interface HyroxFinished extends ScoreBase {
   finished: true;
   time_sec: number;

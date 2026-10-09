@@ -1,11 +1,21 @@
 import { choose, h, toast } from '../dom';
 import { today, wodSummary } from '../format';
+import { lastSplits, repsPerRound } from '../records';
 import { navigate, type View } from '../router';
-import { findResult, getSession, newId, saveResult, setSession, type Session } from '../store';
+import {
+  currentRecords,
+  findResult,
+  getSession,
+  newId,
+  sameWorkout,
+  saveResult,
+  setSession,
+  type Session,
+} from '../store';
 import { splitsFromMarks } from '../timer';
 import type { ForTimeWod, Result, Score, Wod } from '../types';
 import { isDate, validateScore } from '../validate';
-import { pageHead, splitsList, typeBadge, wodPlan } from './parts';
+import { field, pageHead, splitsList, typeBadge, wodPlan } from './parts';
 
 /** Valeurs de départ du formulaire : champs de tous les types de score, tous facultatifs. */
 interface Draft {
@@ -48,13 +58,8 @@ function repsInRounds(wod: ForTimeWod, rounds: number): number | undefined {
     const reps = wod.rep_scheme.slice(0, rounds).reduce((sum, n) => sum + n, 0);
     return reps * wod.movements.length;
   }
-  let perRound = 0;
-  for (const movement of wod.movements) {
-    const reps = movement.reps ?? movement.calories;
-    if (reps === undefined) return undefined;
-    perRound += reps;
-  }
-  return perRound * rounds;
+  const perRound = repsPerRound(wod.movements);
+  return perRound === undefined ? undefined : perRound * rounds;
 }
 
 function draftFromSession(session: Extract<Session, { stage: 'score' }>): Draft {
@@ -68,14 +73,22 @@ function draftFromSession(session: Extract<Session, { stage: 'score' }>): Draft 
     case 'amrap':
       draft.rounds = rounds;
       draft.extra_reps = 0;
+      // Un temps par tour, à condition que chaque tour compté ait bien été validé au chrono.
+      if (rounds > 0 && marks.length === rounds) draft.splits_sec = splitsFromMarks(marks);
       break;
     case 'emom':
       draft.intervals_completed = completed ? wod.intervals : Math.floor(elapsedMs / (wod.interval_sec * 1000));
       break;
     case 'for_time':
       draft.finished = completed;
-      if (completed) draft.time_sec = Math.max(1, Math.floor(elapsedMs / 1000));
-      else draft.reps_completed = repsInRounds(wod, rounds);
+      if (completed) {
+        draft.time_sec = Math.max(1, Math.floor(elapsedMs / 1000));
+        // Tous les tours intermédiaires validés : le dernier tour se termine avec le WOD.
+        if (wod.rounds > 1 && marks.length === wod.rounds - 1) draft.splits_sec = splitsFromMarks([...marks, elapsedMs]);
+      } else {
+        draft.reps_completed = repsInRounds(wod, rounds);
+        if (rounds > 0 && marks.length === rounds) draft.splits_sec = splitsFromMarks(marks);
+      }
       break;
     case 'hyrox':
       draft.finished = completed;
@@ -109,9 +122,6 @@ function numberInput(value: number | undefined, label: string, max?: number): HT
   });
 }
 
-const field = (label: string, ...controls: (HTMLElement | string)[]) =>
-  h('div', { class: 'field' }, h('span', { class: 'field-label' }, label), h('div', { class: 'field-row' }, controls));
-
 const readNumber = (input: HTMLInputElement) => (input.value.trim() === '' ? undefined : Number(input.value));
 
 export function scoreView(resultId?: string): View | null {
@@ -123,12 +133,33 @@ export function scoreView(resultId?: string): View | null {
   let read: () => Record<string, unknown>;
   const typeFields: (HTMLElement | false)[] = [];
 
+  /** Rappel des temps relevés au chrono. Pour une nouvelle séance, ils sont comparés à la dernière fois. */
+  const splitsRecap = (splits: number[] | undefined, label: string) =>
+    splits !== undefined &&
+    splits.length > 0 &&
+    h(
+      'div',
+      { class: 'field' },
+      h('span', { class: 'field-label' }, label),
+      splitsList(wod, splits, editing ? undefined : lastSplits(sameWorkout(wod))),
+    );
+
   switch (wod.type) {
     case 'amrap': {
+      const splits = draft.splits_sec;
       const rounds = numberInput(draft.rounds, 'Tours complets');
       const extra = numberInput(draft.extra_reps, 'Reps en plus');
-      typeFields.push(field('Tours complets', rounds), field('Reps en plus', extra));
-      read = () => ({ rounds: readNumber(rounds), extra_reps: readNumber(extra) });
+      typeFields.push(
+        field('Tours complets', rounds),
+        field('Reps en plus', extra),
+        splitsRecap(splits, 'Temps par tour, relevés au chrono'),
+      );
+      read = () => {
+        const done = readNumber(rounds);
+        // Les temps par tour ne sont gardés que s'il y en a toujours un par tour compté.
+        const keep = splits !== undefined && splits.length === done;
+        return { rounds: done, extra_reps: readNumber(extra), ...(keep && { splits_sec: splits }) };
+      };
       break;
     }
     case 'emom': {
@@ -141,7 +172,9 @@ export function scoreView(resultId?: string): View | null {
     case 'hyrox': {
       // Les deux se terminent par un temps ; sinon on note où l'on s'est arrêté (reps ou segments).
       const segmentCount = wod.type === 'hyrox' ? wod.segments.length : null;
-      const splits = segmentCount === null ? undefined : draft.splits_sec;
+      /** Nombre de temps attendus quand le WOD est terminé : un par segment ou par tour. */
+      const fullCount = wod.type === 'hyrox' ? wod.segments.length : wod.rounds;
+      const splits = draft.splits_sec;
       let finished = draft.finished ?? true;
       const minutes = numberInput(draft.time_sec === undefined ? undefined : Math.floor(draft.time_sec / 60), 'Minutes');
       const seconds = numberInput(draft.time_sec === undefined ? undefined : draft.time_sec % 60, 'Secondes', 59);
@@ -172,25 +205,23 @@ export function scoreView(resultId?: string): View | null {
         h('div', { class: 'segmented' }, yes, no),
         timeField,
         partialField,
-        splits !== undefined &&
-          h(
-            'div',
-            { class: 'field' },
-            h('span', { class: 'field-label' }, 'Temps par segment, relevés au chrono'),
-            splitsList(wod, splits),
-          ),
+        splitsRecap(splits, `Temps par ${segmentCount === null ? 'tour' : 'segment'}, relevés au chrono`),
       );
       read = () => {
         if (finished) {
           const min = readNumber(minutes);
           const sec = readNumber(seconds);
           const time = min === undefined && sec === undefined ? undefined : (min ?? 0) * 60 + (sec ?? 0);
-          // Les temps par segment ne sont gardés que s'ils correspondent encore au temps final.
-          const keep = splits?.length === segmentCount && time === draft.time_sec;
+          // Les temps relevés ne sont gardés que s'ils correspondent encore au temps final.
+          const keep = draft.finished === true && splits?.length === fullCount && time === draft.time_sec;
           return { finished, time_sec: time, ...(keep && { splits_sec: splits }) };
         }
         const done = readNumber(partial);
-        if (segmentCount === null) return { finished, reps_completed: done };
+        if (segmentCount === null) {
+          // For Time au time cap : les tours terminés avant l'arrêt gardent leur temps.
+          const keep = draft.finished === false && splits !== undefined && splits.length > 0;
+          return { finished, reps_completed: done, ...(keep && { splits_sec: splits }) };
+        }
         const keep = splits !== undefined && splits.length === done;
         return { finished, segments_completed: done, ...(keep && { splits_sec: splits }) };
       };
@@ -252,9 +283,10 @@ export function scoreView(resultId?: string): View | null {
       toast('Score modifié');
       navigate(`/history/${editing.id}`, true);
     } else {
-      saveResult({ id: newId(), ...(wodId && { wod_id: wodId }), date: date.value, wod, score });
+      const id = newId();
+      saveResult({ id, ...(wodId && { wod_id: wodId }), date: date.value, wod, score });
       setSession(null);
-      toast('Séance enregistrée');
+      toast(currentRecords().has(id) ? 'Nouveau record !' : 'Séance enregistrée');
       navigate('/history', true);
     }
   };

@@ -247,11 +247,12 @@ function checkScore(raw: unknown, wod: Wod, path: string, errors: string[]): Sco
 
   switch (wod.type) {
     case 'amrap': {
-      unknownKeys(raw, [...SCORE_KEYS, 'rounds', 'extra_reps'], path, errors);
+      unknownKeys(raw, [...SCORE_KEYS, 'rounds', 'extra_reps', 'splits_sec'], path, errors);
       const rounds = checkNumber(raw.rounds, at('rounds'), errors, 'count');
       const extra_reps = checkNumber(raw.extra_reps, at('extra_reps'), errors, 'count');
+      const splits_sec = checkSplits(raw.splits_sec, at('splits_sec'), errors, { exact: rounds, unit: 'tours' });
       if (errors.length > before || rounds === undefined || extra_reps === undefined) return undefined;
-      return compact<AmrapScore>({ rounds, extra_reps, ...common });
+      return compact<AmrapScore>({ rounds, extra_reps, splits_sec, ...common });
     }
     case 'emom': {
       unknownKeys(raw, [...SCORE_KEYS, 'intervals_completed'], path, errors);
@@ -264,16 +265,18 @@ function checkScore(raw: unknown, wod: Wod, path: string, errors: string[]): Sco
     }
     case 'for_time': {
       if (raw.finished === true) {
-        unknownKeys(raw, [...SCORE_KEYS, 'finished', 'time_sec'], path, errors);
+        unknownKeys(raw, [...SCORE_KEYS, 'finished', 'time_sec', 'splits_sec'], path, errors);
         const time_sec = checkNumber(raw.time_sec, at('time_sec'), errors, 'integer');
+        const splits_sec = checkSplits(raw.splits_sec, at('splits_sec'), errors, { exact: wod.rounds, unit: 'tours' });
         if (errors.length > before || time_sec === undefined) return undefined;
-        return compact<ForTimeFinished>({ finished: true, time_sec, ...common });
+        return compact<ForTimeFinished>({ finished: true, time_sec, splits_sec, ...common });
       }
       if (raw.finished === false) {
-        unknownKeys(raw, [...SCORE_KEYS, 'finished', 'reps_completed'], path, errors);
+        unknownKeys(raw, [...SCORE_KEYS, 'finished', 'reps_completed', 'splits_sec'], path, errors);
         const reps_completed = checkNumber(raw.reps_completed, at('reps_completed'), errors, 'count');
+        const splits_sec = checkSplits(raw.splits_sec, at('splits_sec'), errors, { max: wod.rounds, unit: 'tours' });
         if (errors.length > before || reps_completed === undefined) return undefined;
-        return compact<ForTimeCapped>({ finished: false, reps_completed, ...common });
+        return compact<ForTimeCapped>({ finished: false, reps_completed, splits_sec, ...common });
       }
       return fail(errors, at('finished'), 'doit valoir true ou false');
     }
@@ -282,7 +285,7 @@ function checkScore(raw: unknown, wod: Wod, path: string, errors: string[]): Sco
       if (raw.finished === true) {
         unknownKeys(raw, [...SCORE_KEYS, 'finished', 'time_sec', 'splits_sec'], path, errors);
         const time_sec = checkNumber(raw.time_sec, at('time_sec'), errors, 'integer');
-        const splits_sec = checkSplits(raw.splits_sec, at('splits_sec'), errors, total);
+        const splits_sec = checkSplits(raw.splits_sec, at('splits_sec'), errors, { exact: total, unit: SEGMENTS });
         if (errors.length > before || time_sec === undefined) return undefined;
         return compact<HyroxFinished>({ finished: true, time_sec, splits_sec, ...common });
       }
@@ -292,7 +295,7 @@ function checkScore(raw: unknown, wod: Wod, path: string, errors: string[]): Sco
         if (segments_completed !== undefined && segments_completed > total) {
           fail(errors, at('segments_completed'), `ne peut pas dépasser ${total}`);
         }
-        const splits_sec = checkSplits(raw.splits_sec, at('splits_sec'), errors, segments_completed);
+        const splits_sec = checkSplits(raw.splits_sec, at('splits_sec'), errors, { exact: segments_completed, unit: SEGMENTS });
         if (errors.length > before || segments_completed === undefined) return undefined;
         return compact<HyroxStopped>({ finished: false, segments_completed, splits_sec, ...common });
       }
@@ -301,13 +304,23 @@ function checkScore(raw: unknown, wod: Wod, path: string, errors: string[]): Sco
   }
 }
 
-function checkSplits(raw: unknown, path: string, errors: string[], segments?: number): number[] | undefined {
+const SEGMENTS = 'segments terminés';
+
+/** Temps par tour ou par segment : il doit y en avoir exactement `exact`, ou au plus `max`. */
+function checkSplits(
+  raw: unknown,
+  path: string,
+  errors: string[],
+  rule: { exact?: number; max?: number; unit: string },
+): number[] | undefined {
   if (raw === undefined) return undefined;
   if (!Array.isArray(raw)) return fail(errors, path, 'doit être une liste de durées en secondes');
   const before = errors.length;
   const splits = raw.map((sec, i) => checkNumber(sec, `${path}[${i}]`, errors, 'count'));
-  if (segments !== undefined && raw.length !== segments) {
-    fail(errors, path, `contient ${raw.length} temps pour ${segments} segments terminés`);
+  if (rule.exact !== undefined && raw.length !== rule.exact) {
+    fail(errors, path, `contient ${raw.length} temps pour ${rule.exact} ${rule.unit}`);
+  } else if (rule.max !== undefined && raw.length > rule.max) {
+    fail(errors, path, `contient ${raw.length} temps pour ${rule.max} ${rule.unit} au plus`);
   }
   return errors.length === before ? splits.filter(isDefined) : undefined;
 }

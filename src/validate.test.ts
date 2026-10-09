@@ -213,6 +213,26 @@ describe('validateScore', () => {
     expect(validateScore({ finished: true, reps_completed: 72, rx: true }, valid(fran))).toMatchObject({ ok: false });
   });
 
+  it('valide les temps par tour d’un AMRAP et d’un For Time', () => {
+    const amrap = valid(cindy);
+    const forTime = valid(fran);
+    expect(validateScore({ rounds: 2, extra_reps: 4, splits_sec: [95, 101], rx: true }, amrap).ok).toBe(true);
+    expect(validateScore({ rounds: 3, extra_reps: 0, splits_sec: [95, 101], rx: true }, amrap)).toEqual({
+      ok: false,
+      errors: ['splits_sec : contient 2 temps pour 3 tours'],
+    });
+    expect(validateScore({ finished: true, time_sec: 300, splits_sec: [120, 100, 80], rx: true }, forTime).ok).toBe(true);
+    expect(validateScore({ finished: true, time_sec: 300, splits_sec: [120, 180], rx: true }, forTime)).toEqual({
+      ok: false,
+      errors: ['splits_sec : contient 2 temps pour 3 tours'],
+    });
+    expect(validateScore({ finished: false, reps_completed: 60, splits_sec: [200, 250], rx: true }, forTime).ok).toBe(true);
+    expect(validateScore({ finished: false, reps_completed: 60, splits_sec: [1, 2, 3, 4], rx: true }, forTime)).toEqual({
+      ok: false,
+      errors: ['splits_sec : contient 4 temps pour 3 tours au plus'],
+    });
+  });
+
   it('valide un score Hyrox et ses temps par segment', () => {
     const wod = valid(hyrox);
     expect(validateScore({ finished: true, time_sec: 1500, splits_sec: [300, 280, 320, 600], rx: true }, wod).ok).toBe(true);

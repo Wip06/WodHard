@@ -14,6 +14,7 @@
   --emom: #5cc8ff;
   --for-time: #ff9f43;
   --hyrox: #c79bff;
+  --good: #4ade80;
   --radius: 14px;
   --gutter: 16px;
   --tabs-height: 56px;
@@ -148,9 +149,22 @@ a {
   gap: 10px;
 }
 
+/* Même rythme vertical que .page, pour un bloc de sections rendu à part. */
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
 .row {
   display: flex;
   gap: 10px;
+}
+
+.row > input,
+.row > select {
+  flex: 1;
+  min-width: 0;
 }
 
 .grow {
@@ -308,6 +322,46 @@ a {
   color: var(--accent);
 }
 
+.chip.pr {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 800;
+}
+
+.delta {
+  color: var(--muted);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.delta.better {
+  color: var(--good);
+}
+
+.delta.worse {
+  color: var(--warn);
+}
+
+.compare {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
 .chip.late {
   border-color: color-mix(in srgb, var(--warn) 50%, transparent);
   color: var(--warn);
@@ -356,23 +410,33 @@ a {
   color: var(--muted);
 }
 
+/* Les tours portent déjà leur numéro : pas de numérotation de liste en plus. */
+.splits.rounds {
+  padding-left: 0;
+  list-style: none;
+}
+
 .splits li::marker {
   font-variant-numeric: tabular-nums;
 }
 
-.splits li > * {
-  vertical-align: top;
+.split-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 }
 
 .splits .what {
-  display: inline-block;
-  width: calc(100% - 4.5em);
+  flex: 1;
   color: var(--text);
 }
 
+.splits .delta {
+  font-size: 0.88rem;
+}
+
 .splits .split {
-  display: inline-block;
-  width: 4.5em;
+  min-width: 3.4em;
   color: var(--text);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -537,6 +601,10 @@ input[type='checkbox'] {
   accent-color: var(--accent);
 }
 
+input[type='search'] {
+  appearance: none;
+}
+
 textarea {
   resize: vertical;
 }
@@ -596,6 +664,46 @@ textarea {
 .segmented {
   display: flex;
   gap: 8px;
+}
+
+.segmented .btn {
+  padding-inline: 6px;
+}
+
+/* Création et modification d'un WOD */
+
+.editor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.editor-head h3 {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.editor-head .row {
+  gap: 6px;
+}
+
+.btn.icon {
+  width: 42px;
+  min-height: 42px;
+  padding: 0;
 }
 
 .rpe {
@@ -747,6 +855,37 @@ textarea {
 .timer[data-phase='countdown'] .timer-clock,
 .timer[data-phase='countdown'] .timer-phase {
   color: var(--warn);
+}
+
+.timer[data-kind='rest'] .timer-clock,
+.timer[data-kind='rest'] .timer-phase {
+  color: var(--emom);
+}
+
+.timer-face.free {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.timer-face.free .timer-sub {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.presets .btn {
+  flex: 1;
+  min-height: 44px;
+  padding: 6px 10px;
+  font-size: 0.92rem;
+  white-space: nowrap;
 }
 
 .timer[data-urgent] .timer-clock {

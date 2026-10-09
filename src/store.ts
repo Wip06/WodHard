@@ -1,19 +1,27 @@
 import { toast } from './dom';
-import { mondayOf, today } from './format';
+import { addDays, mondayOf, today } from './format';
+import { recordIds, workKey } from './records';
 import type { Clock } from './timer';
 import type { AppData, Backup, HistoryExport, PlanEntry, ProgramItem, Result, SavedWod, Wod } from './types';
-import { isObj, validateBackup, validateWod } from './validate';
+import { isDate, isObj, validateBackup, validateWod } from './validate';
 
 export const DATA_KEY = 'wodhard:data';
 const SESSION_KEY = 'wodhard:session';
 const EXPORT_KEY = 'wodhard:last-export';
+const UNSAVED_KEY = 'wodhard:unsaved';
+const SNOOZE_KEY = 'wodhard:backup-snooze';
+
+/** Rappel de sauvegarde : à partir de tant de séances non exportées, ou d'une séance non exportée depuis tant de jours. */
+const BACKUP_MAX_SESSIONS = 5;
+const BACKUP_MAX_DAYS = 14;
+const BACKUP_SNOOZE_DAYS = 3;
 
 interface SessionBase {
   wod: Wod;
   wod_id?: string;
   /** Tours complets comptés pendant un AMRAP ou un For Time. */
   rounds: number;
-  /** Hyrox : temps de passage (ms depuis le départ) à la fin de chaque segment terminé. */
+  /** Temps de passage (ms depuis le départ) à la fin de chaque tour ou segment validé au chrono. */
   marks: number[];
 }
 
@@ -122,6 +130,14 @@ export function addProgram(items: ProgramItem[]): { added: number; planned: numb
   return { added, planned };
 }
 
+/** Remplace le contenu d'un WOD. Les séances déjà faites gardent leur propre copie. */
+export function updateWod(id: string, wod: Wod): void {
+  const saved = findWod(id);
+  if (!saved) return;
+  saved.wod = wod;
+  saveData();
+}
+
 export function deleteWod(id: string): void {
   data.wods = data.wods.filter((saved) => saved.id !== id);
   data.plan = data.plan.filter((entry) => entry.wod_id !== id);
@@ -164,6 +180,17 @@ export function sortedResults(): Result[] {
 
 export const resultsFor = (wodId: string) => sortedResults().filter((result) => result.wod_id === wodId);
 
+/** Séances du même entraînement (même travail demandé), de la plus ancienne à la plus récente. */
+export function sameWorkout(wod: Wod): Result[] {
+  const key = workKey(wod);
+  return sortedResults()
+    .reverse()
+    .filter((result) => workKey(result.wod) === key);
+}
+
+/** Identifiants des séances qui détiennent un record. */
+export const currentRecords = () => recordIds(sortedResults().reverse());
+
 /** Ajoute la séance, ou la remplace si son identifiant existe déjà. */
 export function saveResult(result: Result): void {
   const index = data.results.findIndex((existing) => existing.id === result.id);
@@ -171,6 +198,8 @@ export function saveResult(result: Result): void {
     data.results[index] = result;
   } else {
     data.results.push(result);
+    const unsaved = readUnsaved();
+    write(UNSAVED_KEY, JSON.stringify({ count: unsaved.count + 1, since: unsaved.since ?? today() }));
     // Une nouvelle séance coche la plus ancienne date encore prévue pour ce WOD.
     const pending = data.plan
       .filter((entry) => entry.wod_id === result.wod_id && entry.result_id === undefined)
@@ -210,6 +239,8 @@ function mergeById<T extends { id: string }>(current: T[], incoming: T[]): T[] {
 }
 
 export function applyBackup(incoming: AppData, mode: 'merge' | 'replace'): void {
+  // Après un remplacement, les données sont exactement celles d'un fichier que l'on possède.
+  if (mode === 'replace') clearUnsaved();
   data =
     mode === 'replace'
       ? incoming
@@ -222,7 +253,41 @@ export function applyBackup(incoming: AppData, mode: 'merge' | 'replace'): void 
 }
 
 export const lastExport = () => localStorage.getItem(EXPORT_KEY);
-export const markExported = () => write(EXPORT_KEY, new Date().toISOString());
+
+export function markExported(): void {
+  write(EXPORT_KEY, new Date().toISOString());
+  clearUnsaved();
+}
+
+/** Séances enregistrées depuis le dernier export, et date de la première d'entre elles. */
+function readUnsaved(): { count: number; since: string | null } {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(UNSAVED_KEY) ?? 'null');
+    if (isObj(raw) && typeof raw.count === 'number') {
+      return { count: raw.count, since: isDate(raw.since) ? raw.since : null };
+    }
+  } catch {
+    // Compteur illisible : on repart du cas « jamais compté » ci-dessous.
+  }
+  // Avant l'existence de ce compteur : tout compte tant qu'aucun export n'a été fait.
+  return { count: lastExport() ? 0 : data.results.length, since: null };
+}
+
+function clearUnsaved(): void {
+  write(UNSAVED_KEY, JSON.stringify({ count: 0, since: null }));
+  write(SNOOZE_KEY, null);
+}
+
+/** Nombre de séances absentes de toute sauvegarde, et s'il est temps de le rappeler. */
+export function backupStatus(): { unsaved: number; due: boolean } {
+  const { count, since } = readUnsaved();
+  const snoozedUntil = localStorage.getItem(SNOOZE_KEY);
+  const old = since !== null && since <= addDays(today(), -BACKUP_MAX_DAYS);
+  const snoozed = snoozedUntil !== null && today() < snoozedUntil;
+  return { unsaved: count, due: count > 0 && (count >= BACKUP_MAX_SESSIONS || old) && !snoozed };
+}
+
+export const snoozeBackup = () => write(SNOOZE_KEY, addDays(today(), BACKUP_SNOOZE_DAYS));
 
 export const getSession = () => session;
 

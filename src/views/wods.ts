@@ -2,25 +2,33 @@ import { unlockAudio } from '../audio';
 import { choose, h, toast } from '../dom';
 import { dateLabel, dayLabel, plural, scoreLine, today, wodSummary } from '../format';
 import { navigate, render, type View } from '../router';
+import { matchesQuery, searchText } from '../search';
 import {
   addPlan,
   addProgram,
   addWod,
+  backupStatus,
+  currentRecords,
   deleteWod,
   findWod,
   getWods,
   removePlan,
   resultsFor,
   setSession,
+  snoozeBackup,
   visiblePlan,
   type PlannedWod,
 } from '../store';
 import { newClock } from '../timer';
 import type { SavedWod } from '../types';
 import { isDate, parseImport } from '../validate';
+import { exportData } from './data';
 import { pageHead, resultRow, typeBadge, wodSheet } from './parts';
 
 const MAX_ERRORS = 12;
+
+/** Recherche en cours sur l'écran WOD, conservée quand on revient d'une fiche. */
+let query = '';
 
 function wodCard(saved: SavedWod): HTMLElement {
   const done = resultsFor(saved.id);
@@ -73,24 +81,101 @@ export function wodListView(): View {
   const plan = visiblePlan();
   const planned = new Set(plan.map((row) => row.saved.id));
   const others = [...getWods()].reverse().filter((saved) => !planned.has(saved.id));
+  const backup = backupStatus();
+  const index = new Map(getWods().map((saved) => [saved.id, searchText(saved.wod)]));
+
+  const search = h('input', {
+    type: 'search',
+    placeholder: 'Rechercher : nom, mouvement, type…',
+    autocomplete: 'off',
+    enterkeyhint: 'search',
+    'aria-label': 'Rechercher un WOD',
+  });
+  search.value = query;
+  search.addEventListener('input', () => {
+    query = search.value;
+    renderLists();
+  });
+  const lists = h('div');
+
+  function renderLists(): void {
+    const found = (id: string) => matchesQuery(query, index.get(id) ?? '');
+    const planFound = plan.filter((row) => found(row.saved.id));
+    const othersFound = others.filter((saved) => found(saved.id));
+    lists.replaceChildren(
+      h(
+        'div',
+        { class: 'sections' },
+        planFound.length > 0 && [
+          h('h2', { class: 'section-title' }, 'Programme'),
+          h('ul', { class: 'cards' }, planFound.map(planCard)),
+        ],
+        planFound.length > 0 && othersFound.length > 0 && h('h2', { class: 'section-title' }, 'Autres WOD'),
+        othersFound.length > 0 && h('ul', { class: 'cards' }, othersFound.map(wodCard)),
+        planFound.length + othersFound.length === 0 && [
+          h('p', { class: 'empty' }, `Aucun WOD ne correspond à « ${query.trim()} ».`),
+          h(
+            'button',
+            {
+              class: 'btn block',
+              onclick: () => {
+                query = search.value = '';
+                renderLists();
+              },
+            },
+            'Effacer la recherche',
+          ),
+        ],
+      ),
+    );
+  }
+  renderLists();
 
   const el = h(
     'section',
     { class: 'page' },
     h('header', { class: 'brand' }, h('h1', null, 'WOD', h('span', null, 'HARD'))),
-    h('a', { class: 'btn primary block', href: '#/add' }, '+ Coller un WOD'),
-    plan.length > 0 && [
-      h('h2', { class: 'section-title' }, 'Programme'),
-      h('ul', { class: 'cards' }, plan.map(planCard)),
-    ],
-    plan.length > 0 && others.length > 0 && h('h2', { class: 'section-title' }, 'Autres WOD'),
-    others.length > 0 && h('ul', { class: 'cards' }, others.map(wodCard)),
-    getWods().length === 0 &&
+    h('a', { class: 'btn primary block', href: '#/ask' }, 'Demander à Claude'),
+    h(
+      'div',
+      { class: 'row' },
+      h('a', { class: 'btn grow', href: '#/add' }, 'Coller un WOD'),
+      h('a', { class: 'btn grow', href: '#/edit' }, 'Créer un WOD'),
+    ),
+    backup.due &&
       h(
-        'p',
-        { class: 'empty' },
-        'Aucun WOD pour l’instant. Génère-en un dans ton projet Claude, copie le JSON, puis colle-le ici.',
+        'div',
+        { class: 'notice' },
+        h(
+          'p',
+          null,
+          `${plural(backup.unsaved, 'séance')} ${backup.unsaved > 1 ? 'ne sont' : 'n’est'} dans aucune sauvegarde. `,
+          'Tes données n’existent que sur cet appareil.',
+        ),
+        h(
+          'div',
+          { class: 'row' },
+          h('button', { class: 'btn primary grow', onclick: () => void exportData() }, 'Exporter'),
+          h(
+            'button',
+            {
+              class: 'btn grow',
+              onclick: () => {
+                snoozeBackup();
+                render();
+              },
+            },
+            'Plus tard',
+          ),
+        ),
       ),
+    getWods().length > 0
+      ? [search, lists]
+      : h(
+          'p',
+          { class: 'empty' },
+          'Aucun WOD pour l’instant. Demande-en un à Claude puis colle sa réponse, ou crée-le à la main.',
+        ),
   );
   return { el, tab: 'wods' };
 }
@@ -170,6 +255,7 @@ export function wodDetailView(id: string): View | null {
   if (!saved) return null;
   const { wod } = saved;
   const past = resultsFor(id);
+  const records = currentRecords();
   const pending = visiblePlan().filter((row) => row.saved.id === id && !row.done);
 
   const start = () => {
@@ -243,10 +329,20 @@ export function wodDetailView(id: string): View | null {
         h(
           'ul',
           { class: 'cards' },
-          past.map((result) => resultRow(result, false)),
+          past.map((result) => resultRow(result, false, records.has(result.id))),
         ),
       ),
-    h('button', { class: 'btn ghost danger block', onclick: () => void remove() }, 'Supprimer ce WOD'),
+    h(
+      'div',
+      { class: 'stack' },
+      h(
+        'div',
+        { class: 'row' },
+        h('a', { class: 'btn grow', href: `#/edit/${id}` }, 'Modifier'),
+        h('a', { class: 'btn grow', href: `#/copy/${id}` }, 'Dupliquer'),
+      ),
+      h('button', { class: 'btn ghost danger block', onclick: () => void remove() }, 'Supprimer ce WOD'),
+    ),
   );
   return { el, tab: 'wods' };
 }

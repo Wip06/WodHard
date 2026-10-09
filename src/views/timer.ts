@@ -5,14 +5,15 @@ import { navigate, type View } from '../router';
 import { getSession, setSession } from '../store';
 import { cuesBetween, elapsedMs, frame, pause, resume, totalMs, type Frame } from '../timer';
 import type { Movement } from '../types';
+import { screenWake } from '../wake';
 import { movementList } from './parts';
 
 const TICK_MS = 100;
 /** Au-delà de cet écart entre deux rafraîchissements (appli en arrière-plan), les bips manqués sont ignorés. */
 const MAX_CUE_GAP_MS = 1500;
 const URGENT_SEC = 3;
-/** Hyrox : durée minimale d'un segment, pour qu'un double appui ne valide pas deux segments. */
-const MIN_SEGMENT_MS = 1000;
+/** Durée minimale d'un tour ou d'un segment, pour qu'un double appui n'en valide pas deux. */
+const MIN_SPLIT_MS = 1000;
 
 export function timerView(): View | null {
   const initial = getSession();
@@ -108,11 +109,15 @@ export function timerView(): View | null {
 
   function subText(f: Frame, ms: number): string {
     if (f.phase === 'done') return '';
+    // Temps passé dans le tour ou le segment en cours.
+    const lap = clockText(Math.floor((ms - (marks.at(-1) ?? 0)) / 1000));
     switch (wod.type) {
       case 'amrap':
-        return f.phase === 'countdown' ? `AMRAP ${duration(wod.duration_sec)}` : '';
-      case 'for_time':
-        return `Time cap ${clockText(wod.time_cap_sec)}`;
+        return f.phase === 'countdown' ? `AMRAP ${duration(wod.duration_sec)}` : `Ce tour : ${lap}`;
+      case 'for_time': {
+        const cap = clockText(wod.time_cap_sec);
+        return counted && f.phase === 'running' ? `Ce tour : ${lap} · cap ${cap}` : `Time cap ${cap}`;
+      }
       case 'emom': {
         if (f.phase === 'countdown') return `${wod.intervals} × ${duration(wod.interval_sec)}`;
         if (f.interval >= wod.intervals - 1) return 'Dernier intervalle';
@@ -121,7 +126,7 @@ export function timerView(): View | null {
       }
       case 'hyrox': {
         if (f.phase === 'countdown') return plural(segments.length, 'segment');
-        return `Ce segment : ${clockText(Math.floor((ms - (marks.at(-1) ?? 0)) / 1000))}`;
+        return `Ce segment : ${lap}`;
       }
     }
   }
@@ -201,22 +206,7 @@ export function timerView(): View | null {
     scoreBtn.hidden = discardBtn.hidden = !done;
   }
 
-  let wakeLock: WakeLockSentinel | null = null;
-
-  async function keepAwake(): Promise<void> {
-    if (!('wakeLock' in navigator) || (wakeLock && !wakeLock.released)) return;
-    try {
-      wakeLock = await navigator.wakeLock.request('screen');
-    } catch {
-      // Refusé (économie d'énergie, onglet masqué) : le chrono reste juste, seul l'écran peut s'éteindre.
-    }
-  }
-
-  function letSleep(): void {
-    void wakeLock?.release();
-    wakeLock = null;
-  }
-
+  const wake = screenWake();
   let lastMs = now();
 
   function tick(): void {
@@ -224,7 +214,7 @@ export function timerView(): View | null {
     if (ms - lastMs <= MAX_CUE_GAP_MS) cuesBetween(wod, lastMs, ms).forEach(playCue);
     lastMs = ms;
     paint();
-    if (ms >= total) letSleep();
+    if (ms >= total) wake.release();
   }
 
   function togglePause(): void {
@@ -235,7 +225,15 @@ export function timerView(): View | null {
     paint();
   }
 
+  /** AMRAP et For Time : valide le tour en cours en notant son temps de passage, ou annule le dernier. */
   function changeRounds(delta: number): void {
+    if (delta > 0) {
+      const ms = now();
+      if (rounds >= maxRounds || ms - (marks.at(-1) ?? 0) < MIN_SPLIT_MS) return;
+      marks.push(ms);
+    } else {
+      marks.pop();
+    }
     rounds = Math.max(0, Math.min(rounds + delta, maxRounds));
     save();
     paint();
@@ -244,7 +242,7 @@ export function timerView(): View | null {
   /** Hyrox : valide le segment en cours ; le dernier termine le WOD. */
   function nextSegment(): void {
     const ms = now();
-    if (ms < 0 || ms - (marks.at(-1) ?? 0) < MIN_SEGMENT_MS) return;
+    if (ms < 0 || ms - (marks.at(-1) ?? 0) < MIN_SPLIT_MS) return;
     marks.push(ms);
     if (marks.length >= segments.length) return finish(true);
     playCue('tick');
@@ -283,13 +281,13 @@ export function timerView(): View | null {
   function onVisibility(): void {
     if (document.visibilityState !== 'visible') return;
     unlockAudio();
-    if (now() < total) void keepAwake();
+    if (now() < total) void wake.keep();
     tick();
   }
 
   const interval = window.setInterval(tick, TICK_MS);
   document.addEventListener('visibilitychange', onVisibility);
-  if (now() < total) void keepAwake();
+  if (now() < total) void wake.keep();
   paint();
 
   return {
@@ -297,7 +295,7 @@ export function timerView(): View | null {
     destroy() {
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
-      letSleep();
+      wake.release();
     },
   };
 }

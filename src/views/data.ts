@@ -1,7 +1,7 @@
 import { choose, h, toast } from '../dom';
 import { plural, today } from '../format';
 import { render, type View } from '../router';
-import { applyBackup, buildBackup, getWods, lastExport, markExported, sortedResults } from '../store';
+import { applyBackup, backupStatus, buildBackup, getWods, lastExport, markExported, sortedResults } from '../store';
 import { parseBackup } from '../validate';
 import { pageHead } from './parts';
 
@@ -16,7 +16,7 @@ function download(file: File): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function exportData(): Promise<void> {
+export async function exportData(): Promise<void> {
   const file = new File([JSON.stringify(buildBackup(), null, 2)], `wodhard-${today()}.json`, {
     type: 'application/json',
   });
@@ -112,6 +112,8 @@ export function dataView(): View {
       h('dd', null, sortedResults().length),
       h('dt', null, 'Dernière sauvegarde'),
       h('dd', null, exported ? new Date(exported).toLocaleDateString('fr-FR', { dateStyle: 'long' }) : 'jamais'),
+      h('dt', null, 'Séances non sauvegardées'),
+      h('dd', null, backupStatus().unsaved),
       h('dt', null, 'Stockage protégé'),
       h('dd', null, persisted),
     ),

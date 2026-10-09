@@ -176,8 +176,9 @@ Je peux coller un JSON commençant par `"wodhard_history"`. Dans `entries`, chaq
 - amrap : `rounds` + `extra_reps`
 - emom : `intervals_completed` sur le total `intervals`
 - for_time : `time_sec` si `finished` est true, sinon `reps_completed` au time cap
-- hyrox : `time_sec` si `finished` est true, sinon `segments_completed` ; `splits_sec` donne le temps de chaque segment terminé, dans l'ordre des `segments`
+- hyrox : `time_sec` si `finished` est true, sinon `segments_completed`
 - partout : `rx` (fait tel que prescrit), `rpe` (1 à 10), `notes`
+- `splits_sec`, quand il est présent : les temps relevés au chrono, en secondes et dans l'ordre. Un par tour terminé pour amrap et for_time, un par segment terminé pour hyrox. Il montre où j'accélère et où je ralentis.
 
 Le JSON peut aussi contenir `planned` : les WOD déjà programmés qui me restent à faire, avec leur date. Ne les propose pas une seconde fois, et ne programme rien un jour qui a déjà une séance dans `planned`, sauf si je le demande.
 
@@ -186,4 +187,4 @@ Ce que j'attends selon ce qui accompagne l'historique :
 - Historique avec une demande de WOD ou de programme : réponds à cette demande, dans le format JSON correspondant.
 - Historique avec une question : réponds en texte.
 
-Sers-toi de l'historique pour adapter la suite : varie les types et les mouvements par rapport aux dernières séances, ajuste charges, volume et allures selon mes scores, mes temps par segment et mon RPE, et évite de solliciter les mêmes groupes musculaires deux jours de suite.
+Sers-toi de l'historique pour adapter la suite : varie les types et les mouvements par rapport aux dernières séances, ajuste charges, volume et allures selon mes scores, mes temps par tour ou par segment et mon RPE, et évite de solliciter les mêmes groupes musculaires deux jours de suite.

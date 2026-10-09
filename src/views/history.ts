@@ -1,8 +1,9 @@
 import { choose, copyText, h, toast } from '../dom';
 import { dateLabel, plural, scoreLine } from '../format';
 import { navigate, type View } from '../router';
-import { buildHistory, deleteResult, findResult, findWod, sortedResults } from '../store';
-import { pageHead, resultRow, splitsList, wodSheet } from './parts';
+import { lastSplits, scoreDelta } from '../records';
+import { buildHistory, currentRecords, deleteResult, findResult, findWod, sameWorkout, sortedResults } from '../store';
+import { deltaChip, pageHead, resultRow, splitsList, wodSheet } from './parts';
 
 const LIMITS = [
   { value: '10', label: 'Les 10 dernières' },
@@ -13,6 +14,7 @@ const DEFAULT_LIMIT = '30';
 
 export function historyView(): View {
   const results = sortedResults();
+  const records = currentRecords();
   const limit = h(
     'select',
     { 'aria-label': 'Séances à copier' },
@@ -37,7 +39,11 @@ export function historyView(): View {
             h('button', { class: 'btn primary block', onclick: () => void copy() }, 'Copier mon historique'),
             h('label', { class: 'inline-field' }, h('span', null, 'Séances copiées, en JSON pour Claude :'), limit),
           ),
-          h('ul', { class: 'cards' }, results.map((result) => resultRow(result))),
+          h(
+            'ul',
+            { class: 'cards' },
+            results.map((result) => resultRow(result, true, records.has(result.id))),
+          ),
         ]
       : h('p', { class: 'empty' }, 'Aucune séance pour l’instant. Lance un WOD et saisis ton score : il apparaîtra ici.'),
   );
@@ -49,6 +55,15 @@ export function resultView(id: string): View | null {
   if (!result) return null;
   const { wod, score } = result;
   const inLibrary = result.wod_id !== undefined && findWod(result.wod_id) !== undefined;
+
+  // Comparaison avec les autres séances du même entraînement.
+  const workout = sameWorkout(wod);
+  const earlier = workout.slice(0, Math.max(workout.findIndex((other) => other.id === id), 0));
+  const previous = earlier.at(-1);
+  const delta = previous ? scoreDelta(wod, score, previous.score) : null;
+  const records = currentRecords();
+  const isRecord = records.has(id);
+  const best = workout.find((other) => records.has(other.id));
 
   const remove = async () => {
     const confirmed = await choose('Supprimer cette séance ?', `${wod.title}, ${dateLabel(result.date)}.`, [
@@ -72,11 +87,22 @@ export function resultView(id: string): View | null {
       h(
         'span',
         { class: 'result-line' },
+        isRecord && h('span', { class: 'chip pr' }, 'Record'),
         h('span', { class: `chip ${score.rx ? 'rx' : ''}` }, score.rx ? 'Rx' : 'Scaled'),
         score.rpe !== undefined && h('span', { class: 'chip' }, `RPE ${score.rpe}/10`),
       ),
+      previous &&
+        h(
+          'p',
+          { class: 'compare' },
+          `Séance précédente, ${dateLabel(previous.date)} : ${scoreLine(previous.wod, previous.score)}`,
+          delta && deltaChip(delta),
+        ),
+      best && !isRecord && h('p', { class: 'compare' }, `Record : ${scoreLine(best.wod, best.score)}, ${dateLabel(best.date)}`),
       score.notes && h('p', { class: 'description' }, score.notes),
-      'splits_sec' in score && score.splits_sec !== undefined && splitsList(wod, score.splits_sec),
+      'splits_sec' in score &&
+        score.splits_sec !== undefined &&
+        splitsList(wod, score.splits_sec, lastSplits(earlier)),
     ),
     wodSheet(wod),
     h(

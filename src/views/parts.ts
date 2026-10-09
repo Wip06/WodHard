@@ -1,5 +1,6 @@
 import { h } from '../dom';
 import { clock, dateLabel, duration, kg, movementText, quantity, scoreLine, typeLabel, wodSummary } from '../format';
+import { splitDeltas, type Delta } from '../records';
 import type { Movement, Result, Wod } from '../types';
 
 export function pageHead(title: string, back?: { href: string; label: string }): HTMLElement {
@@ -8,6 +9,16 @@ export function pageHead(title: string, back?: { href: string; label: string }):
     { class: 'page-head' },
     back && h('a', { class: 'back', href: back.href }, `‹ ${back.label}`),
     h('h1', null, title),
+  );
+}
+
+/** Un champ de formulaire : libellé puis contrôles (et unités) sur une ligne. */
+export function field(label: string, ...controls: (HTMLElement | string)[]): HTMLElement {
+  return h(
+    'div',
+    { class: 'field' },
+    h('span', { class: 'field-label' }, label),
+    h('div', { class: 'field-row' }, controls),
   );
 }
 
@@ -95,19 +106,46 @@ export function wodPlan(wod: Wod): HTMLElement {
   }
 }
 
-/** Temps de chaque segment d'un Hyrox, en face du segment correspondant. */
-export function splitsList(wod: Wod, splits: number[]): HTMLElement | false {
-  if (wod.type !== 'hyrox' || splits.length === 0) return false;
+/** Écart avec une séance précédente : vert si c'est mieux, orange si c'est moins bien. */
+export function deltaChip(delta: Delta): HTMLElement {
+  const tone = delta.better === null ? '' : delta.better ? 'better' : 'worse';
+  return h('span', { class: `delta ${tone}` }, delta.text);
+}
+
+/**
+ * Temps relevés au chrono : un par segment (Hyrox) ou par tour (AMRAP, For Time). Avec `previous`,
+ * l'écart par rapport à ces temps précédents est affiché ligne par ligne.
+ */
+export function splitsList(wod: Wod, splits: number[], previous?: number[]): HTMLElement | false {
+  if (splits.length === 0) return false;
+  const deltas = splitDeltas(splits, previous);
+  const label = (i: number): string => {
+    if (wod.type === 'hyrox') {
+      const segment = wod.segments[i];
+      return segment ? movementText(segment) : `Segment ${i + 1}`;
+    }
+    const reps = wod.type === 'for_time' ? wod.rep_scheme?.[i] : undefined;
+    return reps === undefined ? `Tour ${i + 1}` : `Tour ${i + 1} (${reps} reps)`;
+  };
   return h(
     'ol',
-    { class: 'splits' },
+    { class: wod.type === 'hyrox' ? 'splits' : 'splits rounds' },
     splits.map((sec, i) => {
-      const segment = wod.segments[i];
+      const diff = deltas[i] ?? null;
       return h(
         'li',
         null,
-        h('span', { class: 'what' }, segment ? movementText(segment) : `Segment ${i + 1}`),
-        h('span', { class: 'split' }, clock(sec)),
+        h(
+          'span',
+          { class: 'split-row' },
+          h('span', { class: 'what' }, label(i)),
+          diff !== null &&
+            deltaChip({
+              text: diff === 0 ? '=' : `${diff < 0 ? '−' : '+'}${clock(Math.abs(diff))}`,
+              better: diff === 0 ? null : diff < 0,
+            }),
+          h('span', { class: 'split' }, clock(sec)),
+        ),
       );
     }),
   );
@@ -133,7 +171,7 @@ export function wodSheet(wod: Wod): HTMLElement {
   );
 }
 
-export function resultRow(result: Result, withTitle = true): HTMLElement {
+export function resultRow(result: Result, withTitle = true, record = false): HTMLElement {
   const { score } = result;
   return h(
     'li',
@@ -152,6 +190,7 @@ export function resultRow(result: Result, withTitle = true): HTMLElement {
         'span',
         { class: 'result-line' },
         h('span', { class: 'score' }, scoreLine(result.wod, score)),
+        record && h('span', { class: 'chip pr' }, 'PR'),
         h('span', { class: `chip ${score.rx ? 'rx' : ''}` }, score.rx ? 'Rx' : 'Scaled'),
         score.rpe !== undefined && h('span', { class: 'chip' }, `RPE ${score.rpe}`),
       ),

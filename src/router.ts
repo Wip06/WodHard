@@ -1,6 +1,6 @@
 import { dismissToast, h } from './dom';
 
-export type Tab = 'wods' | 'history' | 'data';
+export type Tab = 'wods' | 'chrono' | 'history' | 'data';
 
 export interface View {
   el: HTMLElement;
@@ -11,6 +11,7 @@ export interface View {
 
 const TABS: { tab: Tab; path: string; label: string }[] = [
   { tab: 'wods', path: '/', label: 'WOD' },
+  { tab: 'chrono', path: '/chrono', label: 'Chrono' },
   { tab: 'history', path: '/history', label: 'Historique' },
   { tab: 'data', path: '/data', label: 'Données' },
 ];
