@@ -58,6 +58,14 @@ describe('recherche de WOD', () => {
     expect(found('skierg', hyrox)).toBe(true);
   });
 
+  it('trouve un mouvement par son nom français, et un WOD en duo', () => {
+    expect(found('course', hyrox)).toBe(true);
+    expect(found('tractions', fran)).toBe(true);
+    expect(found('rameur', hyrox)).toBe(false);
+    expect(found('duo', { ...fran, team_size: 2 })).toBe(true);
+    expect(found('duo', fran)).toBe(false);
+  });
+
   it('exige tous les mots de la recherche', () => {
     expect(found('swing burpee', emom)).toBe(true);
     expect(found('swing thruster', emom)).toBe(false);

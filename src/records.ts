@@ -1,5 +1,6 @@
 import { clock, plural } from './format';
-import type { Movement, Result, Score, Wod } from './types';
+import { canonicalName, isRest } from './movements';
+import type { ForTimeWod, Movement, Result, Score, Wod } from './types';
 
 /** Écart entre deux scores. `better` vaut null quand ils sont identiques. */
 export interface Delta {
@@ -8,27 +9,38 @@ export interface Delta {
 }
 
 /**
- * Identifie un entraînement par le travail demandé : mouvements, quantités, charges, durées.
- * Le titre, la description ou le time cap peuvent changer sans casser la comparaison.
+ * Identifie un entraînement par le travail demandé : mouvements, quantités, charges, durées, et
+ * taille de l'équipe. Le titre, la description ou le time cap peuvent changer sans casser la
+ * comparaison, et les variantes d'un même nom (« rameur », « Rowing ») se retrouvent.
  */
 export function workKey(wod: Wod): string {
-  const work = (m: Movement) => [m.name.trim().toLowerCase(), m.reps, m.distance_m, m.calories, m.duration_sec, m.load_kg];
+  const work = (m: Movement) => [
+    canonicalName(m.name).toLowerCase(),
+    m.reps,
+    m.distance_m,
+    m.calories,
+    m.duration_sec,
+    m.load_kg,
+    m.load_count === 2 ? 2 : undefined,
+  ];
+  const team = wod.team_size ?? 1;
   switch (wod.type) {
     case 'amrap':
-      return JSON.stringify(['amrap', wod.duration_sec, wod.movements.map(work)]);
+      return JSON.stringify(['amrap', team, wod.duration_sec, wod.movements.map(work)]);
     case 'emom':
-      return JSON.stringify(['emom', wod.interval_sec, wod.intervals, wod.slots.map((slot) => slot.map(work))]);
+      return JSON.stringify(['emom', team, wod.interval_sec, wod.intervals, wod.slots.map((slot) => slot.map(work))]);
     case 'for_time':
-      return JSON.stringify(['for_time', wod.rounds, wod.rep_scheme, wod.movements.map(work)]);
+      return JSON.stringify(['for_time', team, wod.rounds, wod.rep_scheme, wod.movements.map(work)]);
     case 'hyrox':
-      return JSON.stringify(['hyrox', wod.segments.map(work)]);
+      return JSON.stringify(['hyrox', team, wod.segments.map(work)]);
   }
 }
 
-/** Reps d'un tour, quand tous les mouvements se comptent en reps ou en calories. */
+/** Reps d'un tour, quand tous les mouvements se comptent en reps ou en calories ; les repos ne comptent pas. */
 export function repsPerRound(movements: Movement[]): number | undefined {
   let total = 0;
   for (const movement of movements) {
+    if (isRest(movement)) continue;
     const reps = movement.reps ?? movement.calories;
     if (reps === undefined) return undefined;
     total += reps;
@@ -36,19 +48,49 @@ export function repsPerRound(movements: Movement[]): number | undefined {
   return total;
 }
 
+const followsScheme = (m: Movement) =>
+  m.reps === undefined && m.distance_m === undefined && m.calories === undefined && m.duration_sec === undefined;
+
+/**
+ * Reps cumulées sur les premiers tours d'un For Time, quand tout se compte en reps ou en calories.
+ * Avec un rep_scheme, un mouvement sans quantité fait les reps du tour, les autres gardent la leur.
+ */
+export function repsInRounds(wod: ForTimeWod, rounds: number): number | undefined {
+  if (rounds === 0) return undefined;
+  let total = 0;
+  for (let i = 0; i < Math.min(rounds, wod.rounds); i++) {
+    const schemeReps = wod.rep_scheme?.[i];
+    const round = wod.movements.map((m) => (schemeReps !== undefined && followsScheme(m) ? { ...m, reps: schemeReps } : m));
+    const reps = repsPerRound(round);
+    if (reps === undefined) return undefined;
+    total += reps;
+  }
+  return total;
+}
+
+/** Vrai pour un For Time ou un Hyrox terminé après son time cap. */
+export function isOverCap(wod: Wod, score: Score): boolean {
+  const cap = wod.type === 'for_time' || wod.type === 'hyrox' ? wod.time_cap_sec : undefined;
+  return cap !== undefined && 'time_sec' in score && score.finished && score.time_sec > cap;
+}
+
 /** Critères de classement, du plus important au moins important ; plus grand = meilleur. */
-function rank(score: Score): number[] {
+function rank(score: Score, wod?: Wod): number[] {
   const rx = score.rx ? 1 : 0;
   if ('rounds' in score) return [rx, score.rounds, score.extra_reps];
   if ('intervals_completed' in score) return [rx, score.intervals_completed];
-  if (score.finished) return [rx, 1, -score.time_sec];
+  // Fini dans le cap, puis fini hors cap, puis arrêté avant la fin.
+  if (score.finished) return [rx, wod && isOverCap(wod, score) ? 1 : 2, -score.time_sec];
   return [rx, 0, 'segments_completed' in score ? score.segments_completed : score.reps_completed];
 }
 
-/** Positif si `a` est meilleur que `b`. Un score Rx passe toujours devant un score scaled. */
-export function compareScores(a: Score, b: Score): number {
-  const ra = rank(a);
-  const rb = rank(b);
+/**
+ * Positif si `a` est meilleur que `b`. Un score Rx passe toujours devant un score scaled.
+ * Avec les WOD des deux séances, un temps hors cap passe derrière tout temps fait dans le cap.
+ */
+export function compareScores(a: Score, b: Score, wods?: [Wod, Wod]): number {
+  const ra = rank(a, wods?.[0]);
+  const rb = rank(b, wods?.[1]);
   for (let i = 0; i < Math.max(ra.length, rb.length); i++) {
     const diff = (ra[i] ?? 0) - (rb[i] ?? 0);
     if (diff !== 0) return diff;
@@ -69,7 +111,9 @@ export function recordIds(chronological: Result[]): Set<string> {
   const ids = new Set<string>();
   for (const group of groups.values()) {
     if (group.length < 2) continue;
-    const best = group.reduce((top, result) => (compareScores(result.score, top.score) > 0 ? result : top));
+    const best = group.reduce((top, result) =>
+      compareScores(result.score, top.score, [result.wod, top.wod]) > 0 ? result : top,
+    );
     ids.add(best.id);
   }
   return ids;

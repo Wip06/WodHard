@@ -1,9 +1,10 @@
 import { choose, copyText, h, toast } from '../dom';
 import { dateLabel, plural, scoreLine } from '../format';
+import { coachReady, loadCoach } from '../gemini';
 import { navigate, type View } from '../router';
-import { lastSplits, scoreDelta } from '../records';
+import { isOverCap, lastSplits, scoreDelta } from '../records';
 import { buildHistory, currentRecords, deleteResult, findResult, findWod, sameWorkout, sortedResults } from '../store';
-import { deltaChip, pageHead, resultRow, splitsList, wodSheet } from './parts';
+import { adjustmentText, askAdvice, deltaChip, pageHead, resultRow, splitsList, wodSheet } from './parts';
 
 const LIMITS = [
   { value: '10', label: 'Les 10 dernières' },
@@ -88,6 +89,7 @@ export function resultView(id: string): View | null {
         'span',
         { class: 'result-line' },
         isRecord && h('span', { class: 'chip pr' }, 'Record'),
+        isOverCap(wod, score) && h('span', { class: 'chip late' }, 'Hors cap'),
         h('span', { class: `chip ${score.rx ? 'rx' : ''}` }, score.rx ? 'Rx' : 'Scaled'),
         score.rpe !== undefined && h('span', { class: 'chip' }, `RPE ${score.rpe}/10`),
       ),
@@ -99,6 +101,18 @@ export function resultView(id: string): View | null {
           delta && deltaChip(delta),
         ),
       best && !isRecord && h('p', { class: 'compare' }, `Record : ${scoreLine(best.wod, best.score)}, ${dateLabel(best.date)}`),
+      score.adjustments &&
+        score.adjustments.length > 0 &&
+        h(
+          'div',
+          { class: 'adjustments' },
+          h('span', { class: 'field-label' }, 'Adapté'),
+          h(
+            'ul',
+            null,
+            score.adjustments.map((adjustment) => h('li', null, adjustmentText(wod, adjustment))),
+          ),
+        ),
       score.notes && h('p', { class: 'description' }, score.notes),
       'splits_sec' in score &&
         score.splits_sec !== undefined &&
@@ -108,6 +122,7 @@ export function resultView(id: string): View | null {
     h(
       'div',
       { class: 'stack' },
+      coachReady(loadCoach()) && h('button', { class: 'btn primary block', onclick: () => askAdvice(result) }, 'Avis du coach'),
       h('a', { class: 'btn block', href: `#/score/${id}` }, 'Modifier le score'),
       inLibrary && h('a', { class: 'btn block', href: `#/wod/${result.wod_id}` }, 'Refaire ce WOD'),
       h('button', { class: 'btn ghost danger block', onclick: () => void remove() }, 'Supprimer cette séance'),

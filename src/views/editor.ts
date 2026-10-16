@@ -1,5 +1,5 @@
 import { h, toast } from '../dom';
-import { typeLabel } from '../format';
+import { teamLabel, typeLabel } from '../format';
 import { navigate, type View } from '../router';
 import { addWod, findWod, updateWod } from '../store';
 import type { Movement, Wod, WodType } from '../types';
@@ -14,6 +14,8 @@ interface MovementDraft {
   amount: string;
   unit: Unit;
   load: string;
+  /** Paire de charges : `load` est la charge d'une main. */
+  pair: boolean;
   notes: string;
 }
 
@@ -24,6 +26,8 @@ interface Draft {
   description: string;
   warmup: string;
   equipment: string;
+  /** '' pour un WOD en solo, sinon le nombre d'athlètes. */
+  team: string;
   durationMin: string;
   durationSec: string;
   intervalMin: string;
@@ -59,8 +63,10 @@ const FIELD_LABELS: Record<string, string> = {
   movements: 'Mouvements',
   segments: 'Segments',
   slots: 'Intervalles',
+  team_size: 'Équipe',
 };
-const PART_LABELS: Record<string, string> = { name: 'nom', load_kg: 'charge', notes: 'notes' };
+const PART_LABELS: Record<string, string> = { name: 'nom', load_kg: 'charge', load_count: 'paire', notes: 'notes' };
+const TEAM_SIZES = ['', '2', '3', '4'];
 
 const TITLE_MAX = 60;
 const COPY_SUFFIX = ' (copie)';
@@ -68,7 +74,7 @@ const COPY_SUFFIX = ' (copie)';
 /** Titre proposé pour une copie, raccourci au besoin pour tenir dans la limite du format. */
 const copyTitle = (title: string) => `${title.slice(0, TITLE_MAX - COPY_SUFFIX.length).trimEnd()}${COPY_SUFFIX}`;
 
-const emptyMovement = (): MovementDraft => ({ name: '', amount: '', unit: 'reps', load: '', notes: '' });
+const emptyMovement = (): MovementDraft => ({ name: '', amount: '', unit: 'reps', load: '', pair: false, notes: '' });
 const isBlank = (m: MovementDraft) => [m.name, m.amount, m.load, m.notes].every((value) => value.trim() === '');
 const text = (value: string) => (value.trim() === '' ? undefined : value.trim());
 const number = (value: string) => (value.trim() === '' ? undefined : Number(value.trim().replace(',', '.')));
@@ -90,6 +96,7 @@ function movementDraft(movement: Movement): MovementDraft {
     amount: String(movement[unit] ?? ''),
     unit,
     load: String(movement.load_kg ?? ''),
+    pair: movement.load_count === 2,
     notes: movement.notes ?? '',
   };
 }
@@ -101,6 +108,7 @@ function draftOf(wod?: Wod): Draft {
     description: wod?.description ?? '',
     warmup: wod?.warmup ?? '',
     equipment: (wod?.equipment ?? []).join(', '),
+    team: wod?.team_size === undefined ? '' : String(wod.team_size),
     durationMin: '',
     durationSec: '',
     intervalMin: '1',
@@ -141,10 +149,12 @@ const schemeOf = (draft: Draft) =>
 /** Traduit le formulaire en WOD brut ; c'est le validateur commun qui juge ensuite. */
 function rawOf(draft: Draft): Record<string, unknown> {
   const scheme = schemeOf(draft);
+  // Avec un schéma, un mouvement sans quantité suit le schéma : sa quantité reste vide.
   const movement = (m: MovementDraft) => ({
     name: m.name,
-    ...(scheme.length === 0 && { [m.unit]: number(m.amount) }),
+    ...((scheme.length === 0 || m.amount.trim() !== '') && { [m.unit]: number(m.amount) }),
     load_kg: number(m.load),
+    load_count: m.pair ? 2 : undefined,
     notes: text(m.notes),
   });
   const equipment = draft.equipment
@@ -158,6 +168,7 @@ function rawOf(draft: Draft): Record<string, unknown> {
     description: text(draft.description),
     warmup: text(draft.warmup),
     equipment: equipment.length > 0 ? equipment : undefined,
+    team_size: number(draft.team),
   };
   const first = (draft.lists[0] ?? []).map(movement);
   const cap = seconds(draft.capMin, draft.capSec);
@@ -193,6 +204,8 @@ function humanize(error: string): string {
   const slots = /^(\d+) slots pour seulement (\d+) intervalles$/.exec(message);
   if (message === 'champ manquant' || message === 'doit être un texte non vide') message = 'à remplir';
   else if (message.startsWith('il faut exactement un champ')) message = 'quantité à remplir';
+  else if (message.startsWith('au plus un champ')) message = 'une seule quantité';
+  else if (message === 'demande aussi load_kg') message = 'indique la charge d’une main';
   else if (message === 'doit contenir au moins un mouvement') message = 'ajoutes-en au moins un';
   else if (message === 'aucun mouvement dans les slots') message = 'ajoute au moins un mouvement';
   else if (slots) message = `${slots[1]} intervalles décrits pour un total de ${slots[2]}`;
@@ -265,6 +278,10 @@ export function editorView(id?: string, copy = false): View | null {
     unit.addEventListener('change', () => {
       movement.unit = UNITS.find(({ value }) => value === unit.value)?.value ?? 'reps';
     });
+    const pair = h('input', { type: 'checkbox', checked: movement.pair, 'aria-label': 'Paire de charges' });
+    pair.addEventListener('change', () => {
+      movement.pair = pair.checked;
+    });
     const icon = (label: string, symbol: string, disabled: boolean, onclick: () => void) =>
       h('button', { type: 'button', class: 'btn icon', 'aria-label': label, disabled, onclick }, symbol);
 
@@ -290,9 +307,17 @@ export function editorView(id?: string, copy = false): View | null {
       h(
         'div',
         { class: 'row' },
-        !usesScheme() && bind(movement, 'amount', { ...numeric('Quantité', 'Quantité'), inputmode: 'decimal' }),
-        !usesScheme() && unit,
+        bind(movement, 'amount', {
+          ...numeric('Quantité', usesScheme() ? 'Schéma' : 'Quantité'),
+          inputmode: 'decimal',
+        }),
+        unit,
+      ),
+      h(
+        'div',
+        { class: 'row' },
         bind(movement, 'load', { ...numeric('Charge en kg', 'Charge kg'), inputmode: 'decimal' }),
+        h('label', { class: 'pair' }, pair, h('span', null, 'Paire')),
       ),
       bind(movement, 'notes', { placeholder: 'Notes, scaling (facultatif)', 'aria-label': 'Notes' }),
     );
@@ -379,7 +404,7 @@ export function editorView(id?: string, copy = false): View | null {
         const scheme = bind(draft, 'scheme', { placeholder: '21-15-9', 'aria-label': 'Schéma de reps' });
         rounds.disabled = usesScheme();
         scheme.addEventListener('input', () => {
-          // Avec un schéma, les quantités par mouvement n'ont plus lieu d'être.
+          // Avec un schéma, une quantité vide veut dire « suit le schéma ».
           if (rounds.disabled === usesScheme()) return;
           rounds.disabled = usesScheme();
           renderLists();
@@ -388,7 +413,11 @@ export function editorView(id?: string, copy = false): View | null {
           field('Time cap', minutes('capMin'), 'min', secs('capSec'), 's'),
           field('Nombre de tours', rounds),
           field('Schéma de reps (facultatif)', scheme),
-          h('p', { class: 'hint' }, 'Avec un schéma comme 21-15-9, chaque mouvement prend ces reps tour après tour.'),
+          h(
+            'p',
+            { class: 'hint' },
+            'Avec un schéma comme 21-15-9, un mouvement sans quantité prend ces reps tour après tour ; un mouvement avec quantité (200 m de course) la garde à chaque tour.',
+          ),
         );
         break;
       }
@@ -414,6 +443,15 @@ export function editorView(id?: string, copy = false): View | null {
       typeLabel(type),
     ),
   );
+
+  const team = h(
+    'select',
+    { 'aria-label': 'Équipe' },
+    TEAM_SIZES.map((size) => h('option', { value: size, selected: size === draft.team }, size === '' ? 'Solo' : teamLabel(Number(size)))),
+  );
+  team.addEventListener('change', () => {
+    draft.team = team.value;
+  });
 
   const submit = (event: Event) => {
     event.preventDefault();
@@ -460,13 +498,14 @@ export function editorView(id?: string, copy = false): View | null {
       { class: 'form', novalidate: true, onsubmit: submit },
       h('div', { class: 'segmented' }, typeButtons),
       field('Titre', bind(draft, 'title', { maxlength: String(TITLE_MAX), 'aria-label': 'Titre' })),
+      field('Équipe', team),
       typeEl,
       listsEl,
       field('Description (facultatif)', bindArea(draft, 'description', 'Description')),
       field('Échauffement (facultatif)', bindArea(draft, 'warmup', 'Échauffement')),
       field(
         'Matériel (facultatif, séparé par des virgules)',
-        bind(draft, 'equipment', { placeholder: 'kettlebell, rameur', 'aria-label': 'Matériel' }),
+        bind(draft, 'equipment', { placeholder: 'Kettlebell, Rower', 'aria-label': 'Matériel' }),
       ),
       errorBox,
       h('button', { type: 'submit', class: 'btn primary big block' }, 'Enregistrer'),

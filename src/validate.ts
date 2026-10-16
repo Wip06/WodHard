@@ -1,4 +1,6 @@
+import { allMovements } from './movements';
 import type {
+  Adjustment,
   AmrapScore,
   AmrapWod,
   AppData,
@@ -25,9 +27,11 @@ type Obj = Record<string, unknown>;
 type NumberKind = 'integer' | 'count' | 'positive';
 
 const QUANTITIES = ['reps', 'distance_m', 'calories', 'duration_sec'] as const;
-const MOVEMENT_KEYS = ['name', ...QUANTITIES, 'load_kg', 'notes'];
-const WOD_KEYS = ['schema_version', 'type', 'title', 'description', 'warmup', 'equipment'];
-const SCORE_KEYS = ['rx', 'rpe', 'notes'];
+const MOVEMENT_KEYS = ['name', ...QUANTITIES, 'load_kg', 'load_count', 'notes'];
+const ADJUSTMENT_KEYS = ['index', 'name', 'replaced_by', ...QUANTITIES, 'load_kg', 'load_count'];
+const TEAM_MAX = 4;
+const WOD_KEYS = ['schema_version', 'type', 'title', 'description', 'warmup', 'equipment', 'team_size'];
+const SCORE_KEYS = ['rx', 'rpe', 'notes', 'adjustments'];
 const TITLE_MAX = 60;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^[\w-]{1,64}$/;
@@ -96,18 +100,31 @@ function checkText(value: unknown, path: string, errors: string[], max?: number)
 const optionalText = (value: unknown, path: string, errors: string[]) =>
   value === undefined ? undefined : checkText(value, path, errors);
 
-function checkMovement(raw: unknown, path: string, errors: string[], withQuantity: boolean): Movement | undefined {
+/**
+ * `exact` : exactement une quantité. `free` : au plus une, pour un For Time avec `rep_scheme`, où
+ * un mouvement sans quantité suit le schéma et un mouvement avec quantité la garde à chaque tour.
+ */
+type QuantityRule = 'exact' | 'free';
+
+function checkLoadCount(value: unknown, hasLoad: boolean, path: string, errors: string[]): number | undefined {
+  if (value === undefined) return undefined;
+  if (value !== 1 && value !== 2) return fail(errors, path, 'doit valoir 1 ou 2');
+  if (!hasLoad) return fail(errors, path, 'demande aussi load_kg');
+  return value;
+}
+
+function checkMovement(raw: unknown, path: string, errors: string[], rule: QuantityRule): Movement | undefined {
   if (!isObj(raw)) return fail(errors, path, 'doit être un objet { "name": … }');
   const before = errors.length;
   unknownKeys(raw, MOVEMENT_KEYS, path, errors);
 
   const movement: Movement = { name: checkText(raw.name, join(path, 'name'), errors) ?? '' };
   const present = QUANTITIES.filter((key) => raw[key] !== undefined);
-  if (withQuantity && present.length !== 1) {
-    const received = present.length > 0 ? ` (reçu : ${present.join(', ')})` : '';
+  const received = present.length > 0 ? ` (reçu : ${present.join(', ')})` : '';
+  if (rule === 'exact' && present.length !== 1) {
     fail(errors, path, `il faut exactement un champ parmi ${QUANTITIES.join(', ')}${received}`);
-  } else if (!withQuantity && present.length > 0) {
-    fail(errors, path, `${present.join(', ')} interdit quand rep_scheme est défini`);
+  } else if (rule === 'free' && present.length > 1) {
+    fail(errors, path, `au plus un champ parmi ${QUANTITIES.join(', ')}${received}`);
   }
   for (const key of present) {
     const kind = key === 'distance_m' ? 'positive' : 'integer';
@@ -118,6 +135,8 @@ function checkMovement(raw: unknown, path: string, errors: string[], withQuantit
     const load = checkNumber(raw.load_kg, join(path, 'load_kg'), errors, 'positive');
     if (load !== undefined) movement.load_kg = load;
   }
+  const count = checkLoadCount(raw.load_count, raw.load_kg !== undefined, join(path, 'load_count'), errors);
+  if (count !== undefined) movement.load_count = count;
   const notes = optionalText(raw.notes, join(path, 'notes'), errors);
   if (notes !== undefined) movement.notes = notes;
 
@@ -128,14 +147,14 @@ function checkMovements(
   raw: unknown,
   path: string,
   errors: string[],
-  withQuantity: boolean,
+  rule: QuantityRule,
   allowEmpty = false,
 ): Movement[] | undefined {
   if (raw === undefined) return fail(errors, path, 'champ manquant');
   if (!Array.isArray(raw)) return fail(errors, path, 'doit être une liste de mouvements');
   if (raw.length === 0 && !allowEmpty) return fail(errors, path, 'doit contenir au moins un mouvement');
   const before = errors.length;
-  const movements = raw.map((item, i) => checkMovement(item, `${path}[${i}]`, errors, withQuantity));
+  const movements = raw.map((item, i) => checkMovement(item, `${path}[${i}]`, errors, rule));
   return errors.length === before ? movements.filter(isDefined) : undefined;
 }
 
@@ -145,7 +164,7 @@ function checkSlots(raw: unknown, path: string, errors: string[], intervals?: nu
     return fail(errors, path, 'doit être une liste non vide de listes de mouvements');
   }
   const before = errors.length;
-  const slots = raw.map((slot, i) => checkMovements(slot, `${path}[${i}]`, errors, true, true));
+  const slots = raw.map((slot, i) => checkMovements(slot, `${path}[${i}]`, errors, 'exact', true));
   if (intervals !== undefined && raw.length > intervals) {
     fail(errors, path, `${raw.length} slots pour seulement ${intervals} intervalles`);
   }
@@ -185,13 +204,20 @@ function checkWod(raw: unknown, path: string, errors: string[]): Wod | undefined
         .filter(isDefined);
     }
   }
-  const base = { title: title ?? '', description, warmup, equipment };
+  let team_size: number | undefined;
+  if (raw.team_size !== undefined) {
+    team_size = checkNumber(raw.team_size, at('team_size'), errors, 'integer');
+    if (team_size !== undefined && (team_size < 2 || team_size > TEAM_MAX)) {
+      team_size = fail(errors, at('team_size'), `doit être compris entre 2 et ${TEAM_MAX} (à omettre pour un WOD en solo)`);
+    }
+  }
+  const base = { title: title ?? '', description, warmup, equipment, team_size };
 
   switch (raw.type) {
     case 'amrap': {
       unknownKeys(raw, [...WOD_KEYS, 'duration_sec', 'movements'], path, errors);
       const duration_sec = checkNumber(raw.duration_sec, at('duration_sec'), errors, 'integer');
-      const movements = checkMovements(raw.movements, at('movements'), errors, true);
+      const movements = checkMovements(raw.movements, at('movements'), errors, 'exact');
       if (errors.length > before || duration_sec === undefined || movements === undefined) return undefined;
       return compact<AmrapWod>({ schema_version: 1, type: 'amrap', ...base, duration_sec, movements });
     }
@@ -211,7 +237,7 @@ function checkWod(raw: unknown, path: string, errors: string[]): Wod | undefined
       const rounds = checkNumber(raw.rounds, at('rounds'), errors, 'integer');
       const hasScheme = raw.rep_scheme !== undefined;
       const rep_scheme = hasScheme ? checkRepScheme(raw.rep_scheme, at('rep_scheme'), errors, rounds) : undefined;
-      const movements = checkMovements(raw.movements, at('movements'), errors, !hasScheme);
+      const movements = checkMovements(raw.movements, at('movements'), errors, hasScheme ? 'free' : 'exact');
       if (errors.length > before || time_cap_sec === undefined || rounds === undefined || movements === undefined) {
         return undefined;
       }
@@ -219,7 +245,7 @@ function checkWod(raw: unknown, path: string, errors: string[]): Wod | undefined
     }
     case 'hyrox': {
       unknownKeys(raw, [...WOD_KEYS, 'segments', 'time_cap_sec'], path, errors);
-      const segments = checkMovements(raw.segments, at('segments'), errors, true);
+      const segments = checkMovements(raw.segments, at('segments'), errors, 'exact');
       const time_cap_sec =
         raw.time_cap_sec === undefined
           ? undefined
@@ -243,7 +269,8 @@ function checkScore(raw: unknown, wod: Wod, path: string, errors: string[]): Sco
     rpe = checkNumber(raw.rpe, at('rpe'), errors, 'integer');
     if (rpe !== undefined && rpe > 10) fail(errors, at('rpe'), 'doit être compris entre 1 et 10');
   }
-  const common = { rx: raw.rx === true, rpe, notes: optionalText(raw.notes, at('notes'), errors) };
+  const adjustments = raw.adjustments === undefined ? undefined : checkAdjustments(raw.adjustments, wod, at('adjustments'), errors);
+  const common = { rx: raw.rx === true, rpe, notes: optionalText(raw.notes, at('notes'), errors), adjustments };
 
   switch (wod.type) {
     case 'amrap': {
@@ -307,6 +334,50 @@ function checkScore(raw: unknown, wod: Wod, path: string, errors: string[]): Sco
 const SEGMENTS = 'segments terminés';
 
 /** Temps par tour ou par segment : il doit y en avoir exactement `exact`, ou au plus `max`. */
+/** Adaptations d'une séance : chacune vise un mouvement du WOD, par son rang et son nom. */
+function checkAdjustments(raw: unknown, wod: Wod, path: string, errors: string[]): Adjustment[] | undefined {
+  if (!Array.isArray(raw)) return fail(errors, path, 'doit être une liste');
+  const movements = allMovements(wod);
+  const before = errors.length;
+  const list = raw.map((item, i): Adjustment | undefined => {
+    const at = `${path}[${i}]`;
+    if (!isObj(item)) return fail(errors, at, 'doit être un objet');
+    unknownKeys(item, ADJUSTMENT_KEYS, at, errors);
+    const index = checkNumber(item.index, join(at, 'index'), errors, 'count');
+    const target = index === undefined ? undefined : movements[index];
+    if (index !== undefined && !target) return fail(errors, join(at, 'index'), `aucun mouvement n° ${index} dans ce WOD`);
+    const name = checkText(item.name, join(at, 'name'), errors);
+    if (target && name !== undefined && name !== target.name) {
+      fail(errors, join(at, 'name'), `le mouvement n° ${index} est « ${target.name} »`);
+    }
+    const adjustment: Adjustment = { index: index ?? 0, name: name ?? '' };
+    const replaced_by = optionalText(item.replaced_by, join(at, 'replaced_by'), errors);
+    if (replaced_by !== undefined) adjustment.replaced_by = replaced_by;
+    const expected = target ? QUANTITIES.find((key) => target[key] !== undefined) : undefined;
+    const present = QUANTITIES.filter((key) => item[key] !== undefined);
+    // Un mouvement remplacé peut se mesurer autrement (rameur en calories au lieu d'une course en mètres).
+    if (replaced_by !== undefined && present.length > 1) fail(errors, at, `au plus un champ parmi ${QUANTITIES.join(', ')}`);
+    for (const key of present) {
+      if (target && replaced_by === undefined && key !== expected) {
+        fail(errors, join(at, key), expected ? `ce mouvement se mesure en ${expected}` : 'ce mouvement suit le schéma de reps : seule la charge change');
+      }
+      const value = checkNumber(item[key], join(at, key), errors, key === 'distance_m' ? 'positive' : 'integer');
+      if (value !== undefined) adjustment[key] = value;
+    }
+    if (item.load_kg !== undefined) {
+      const load = checkNumber(item.load_kg, join(at, 'load_kg'), errors, 'positive');
+      if (load !== undefined) adjustment.load_kg = load;
+    }
+    const count = checkLoadCount(item.load_count, true, join(at, 'load_count'), errors);
+    if (count !== undefined) adjustment.load_count = count;
+    if (present.length === 0 && replaced_by === undefined && item.load_kg === undefined && item.load_count === undefined) {
+      fail(errors, at, 'aucune valeur réalisée');
+    }
+    return adjustment;
+  });
+  return errors.length === before ? list.filter(isDefined) : undefined;
+}
+
 function checkSplits(
   raw: unknown,
   path: string,

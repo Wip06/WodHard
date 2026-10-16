@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareScores, lastSplits, recordIds, scoreDelta, splitDeltas, workKey } from './records';
+import { compareScores, isOverCap, lastSplits, recordIds, repsInRounds, repsPerRound, scoreDelta, splitDeltas, workKey } from './records';
 import type { AmrapWod, ForTimeWod, HyroxWod, Result, Score } from './types';
 
 const fran: ForTimeWod = {
@@ -50,6 +50,39 @@ describe('workKey', () => {
     expect(workKey({ ...fran, rep_scheme: [15, 12, 9] })).not.toBe(workKey(fran));
     expect(workKey(cindy)).not.toBe(workKey(fran));
   });
+
+  it('retrouve un mouvement écrit autrement, en français ou en anglais', () => {
+    const rower = { ...hyrox, segments: [{ name: 'Rameur', distance_m: 1000 }] };
+    expect(workKey(rower)).toBe(workKey({ ...hyrox, segments: [{ name: 'Rowing', distance_m: 1000 }] }));
+    expect(workKey({ ...cindy, movements: [{ name: 'pull ups', reps: 5 }, ...cindy.movements.slice(1)] })).toBe(workKey(cindy));
+  });
+
+  it('sépare une paire de charges et un WOD en équipe', () => {
+    const carry = { ...hyrox, segments: [{ name: 'Farmers carry', distance_m: 200, load_kg: 24 }] };
+    const pair = { ...carry, segments: [{ name: 'Farmers carry', distance_m: 200, load_kg: 24, load_count: 2 }] };
+    expect(workKey(pair)).not.toBe(workKey(carry));
+    expect(workKey({ ...carry, segments: [{ name: 'Farmers carry', distance_m: 200, load_kg: 24, load_count: 1 }] })).toBe(workKey(carry));
+    expect(workKey({ ...cindy, team_size: 2 })).not.toBe(workKey(cindy));
+  });
+});
+
+describe('repsInRounds', () => {
+  it('suit le rep_scheme, garde les quantités fixes et ignore les repos', () => {
+    expect(repsInRounds(fran, 2)).toBe(72);
+    const mixed: ForTimeWod = { ...fran, movements: [...fran.movements, { name: 'Burpee', reps: 5 }, { name: 'Repos', duration_sec: 30 }] };
+    expect(repsInRounds(mixed, 2)).toBe(82);
+    expect(repsInRounds({ ...fran, movements: [...fran.movements, { name: 'Run', distance_m: 200 }] }, 1)).toBeUndefined();
+    expect(repsInRounds({ ...fran, rep_scheme: undefined, movements: [{ name: 'Burpee', reps: 10 }] }, 3)).toBe(30);
+    expect(repsInRounds(fran, 0)).toBeUndefined();
+  });
+});
+
+describe('repsPerRound', () => {
+  it('additionne reps et calories, sans compter les repos', () => {
+    expect(repsPerRound(cindy.movements)).toBe(30);
+    expect(repsPerRound([...cindy.movements, { name: 'Repos', duration_sec: 60 }])).toBe(30);
+    expect(repsPerRound([...cindy.movements, { name: 'Run', distance_m: 200 }])).toBeUndefined();
+  });
 });
 
 describe('compareScores', () => {
@@ -68,6 +101,30 @@ describe('compareScores', () => {
     expect(compareScores(a, { rounds: 11, extra_reps: 29, rx: true })).toBeGreaterThan(0);
     expect(compareScores(a, { rounds: 12, extra_reps: 5, rx: true })).toBeLessThan(0);
     expect(compareScores(a, a)).toBe(0);
+  });
+});
+
+describe('hors cap', () => {
+  it('repère un temps au-delà du time cap', () => {
+    expect(isOverCap(fran, time(601))).toBe(true);
+    expect(isOverCap(fran, time(600))).toBe(false);
+    expect(isOverCap(fran, { finished: false, reps_completed: 80, rx: true })).toBe(false);
+    expect(isOverCap(hyrox, { finished: true, time_sec: 9999, rx: true })).toBe(false);
+    expect(isOverCap({ ...hyrox, time_cap_sec: 1800 }, { finished: true, time_sec: 1920, rx: true })).toBe(true);
+    expect(isOverCap(cindy, { rounds: 30, extra_reps: 0, rx: true })).toBe(false);
+  });
+
+  it('classe : fini dans le cap, puis fini hors cap, puis arrêté au cap', () => {
+    const wods: [Result['wod'], Result['wod']] = [fran, fran];
+    expect(compareScores(time(590), time(400 + 300), wods)).toBeGreaterThan(0);
+    expect(compareScores(time(700), { finished: false, reps_completed: 89, rx: true }, wods)).toBeGreaterThan(0);
+    expect(compareScores(time(650), time(700), wods)).toBeGreaterThan(0);
+  });
+
+  it('ne donne pas le record à un temps hors cap plus rapide qu’un temps dans le cap', () => {
+    const shortCap = { ...fran, time_cap_sec: 250 };
+    const results = [done('a', '2026-10-01', time(290)), done('b', '2026-10-05', time(280), shortCap)];
+    expect([...recordIds(results)]).toEqual(['a']);
   });
 });
 

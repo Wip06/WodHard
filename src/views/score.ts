@@ -1,6 +1,9 @@
+import { confetti } from '../confetti';
 import { choose, h, toast } from '../dom';
-import { today, wodSummary } from '../format';
-import { lastSplits, repsPerRound } from '../records';
+import { clock, movementText, today, wodSummary } from '../format';
+import { coachReady, loadCoach } from '../gemini';
+import { allMovements, isRest } from '../movements';
+import { lastSplits, repsInRounds } from '../records';
 import { navigate, type View } from '../router';
 import {
   currentRecords,
@@ -13,9 +16,9 @@ import {
   type Session,
 } from '../store';
 import { splitsFromMarks } from '../timer';
-import type { ForTimeWod, Result, Score, Wod } from '../types';
+import type { Adjustment, Movement, Result, Score, Wod } from '../types';
 import { isDate, validateScore } from '../validate';
-import { field, pageHead, splitsList, typeBadge, wodPlan } from './parts';
+import { askAdvice, badges, field, pageHead, splitsList, wodPlan } from './parts';
 
 /** Valeurs de départ du formulaire : champs de tous les types de score, tous facultatifs. */
 interface Draft {
@@ -30,6 +33,7 @@ interface Draft {
   rx: boolean;
   rpe?: number;
   notes?: string;
+  adjustments?: Adjustment[];
 }
 
 interface Context {
@@ -50,17 +54,6 @@ const FIELD_LABELS: Record<string, string> = {
   rpe: 'RPE',
   notes: 'Notes',
 };
-
-/** Reps cumulées sur les premiers tours, quand tous les mouvements se comptent en reps. */
-function repsInRounds(wod: ForTimeWod, rounds: number): number | undefined {
-  if (rounds === 0) return undefined;
-  if (wod.rep_scheme) {
-    const reps = wod.rep_scheme.slice(0, rounds).reduce((sum, n) => sum + n, 0);
-    return reps * wod.movements.length;
-  }
-  const perRound = repsPerRound(wod.movements);
-  return perRound === undefined ? undefined : perRound * rounds;
-}
 
 function draftFromSession(session: Extract<Session, { stage: 'score' }>): Draft {
   const { wod, elapsedMs, completed, rounds, marks } = session;
@@ -122,7 +115,139 @@ function numberInput(value: number | undefined, label: string, max?: number): HT
   });
 }
 
-const readNumber = (input: HTMLInputElement) => (input.value.trim() === '' ? undefined : Number(input.value));
+const readNumber = (input: HTMLInputElement) =>
+  input.value.trim() === '' ? undefined : Number(input.value.trim().replace(',', '.'));
+
+type QuantityKey = 'reps' | 'distance_m' | 'calories' | 'duration_sec';
+const UNITS: Record<QuantityKey, string> = { reps: 'reps', distance_m: 'm', calories: 'cal', duration_sec: 's' };
+const quantityKey = (m: Movement) => (Object.keys(UNITS) as QuantityKey[]).find((key) => m[key] !== undefined);
+
+/**
+ * « Ce que j'ai vraiment fait » : une ligne par mouvement adapté, pré-remplie avec le prescrit.
+ * Seules les valeurs modifiées sont gardées ; une ligne laissée telle quelle est ignorée.
+ */
+function adjustmentsEditor(wod: Wod, initial: Adjustment[], onChange: () => void) {
+  const movements = allMovements(wod);
+  const choices = movements.map((movement, index) => ({ movement, index })).filter(({ movement }) => !isRest(movement));
+  const scheme = wod.type === 'for_time' ? wod.rep_scheme?.join('-') : undefined;
+  const rowsEl = h('div', { class: 'stack' });
+  const rows: { read: () => Adjustment | null }[] = [];
+
+  function addRow(start?: Adjustment): void {
+    const first = choices.find(({ index }) => index === start?.index) ?? choices[0];
+    if (!first) return;
+    const select = h(
+      'select',
+      { 'aria-label': 'Mouvement adapté' },
+      choices.map(({ movement, index }) =>
+        h('option', { value: index, selected: index === first.index }, `${index + 1}. ${movementText(movement)}`),
+      ),
+    );
+    const replaced = h('input', { type: 'text', autocomplete: 'off', placeholder: 'Fait à la place (facultatif), ex. Ring row', 'aria-label': 'Mouvement fait à la place' });
+    replaced.value = start?.replaced_by ?? '';
+    const amount = h('input', { type: 'number', inputmode: 'decimal', min: 0, step: 'any', 'aria-label': 'Quantité réalisée' });
+    const unit = h('span');
+    const weight = h('input', { type: 'number', inputmode: 'decimal', min: 0, step: 'any', 'aria-label': 'Charge réalisée' });
+    const weightUnit = h('span');
+    const amountRow = h('div', { class: 'field-row' }, amount, unit);
+    const schemeHint = h('p', { class: 'hint left' }, `Ce mouvement suit le schéma ${scheme ?? ''} : seule la charge peut changer.`);
+    const target = () => movements[Number(select.value)];
+
+    /** Valeurs prescrites du mouvement choisi, ou celles déjà notées pour cette ligne. */
+    const fill = (from?: Adjustment) => {
+      const movement = target();
+      if (!movement) return;
+      const key = quantityKey(movement);
+      amountRow.hidden = key === undefined;
+      schemeHint.hidden = key !== undefined || scheme === undefined;
+      unit.textContent = key ? UNITS[key] : '';
+      amount.value = String((key && (from?.[key] ?? movement[key])) ?? '');
+      weight.value = String(from?.load_kg ?? movement.load_kg ?? '');
+      weight.placeholder = movement.load_kg === undefined ? 'aucune' : '';
+      weightUnit.textContent = (from?.load_count ?? movement.load_count) === 2 ? 'kg par main' : 'kg';
+    };
+    fill(start);
+    select.addEventListener('change', () => {
+      fill();
+      onChange();
+    });
+
+    const row = {
+      read(): Adjustment | null {
+        const movement = target();
+        if (!movement) return null;
+        const adjustment: Adjustment = { index: Number(select.value), name: movement.name };
+        const by = replaced.value.trim();
+        if (by !== '') adjustment.replaced_by = by;
+        const key = quantityKey(movement);
+        const done = readNumber(amount);
+        if (key && done !== undefined && done !== movement[key]) adjustment[key] = done;
+        const kg = readNumber(weight);
+        if (kg !== undefined && kg !== movement.load_kg) adjustment.load_kg = kg;
+        if (start?.load_count !== undefined) adjustment.load_count = start.load_count;
+        return Object.keys(adjustment).length > 2 ? adjustment : null;
+      },
+    };
+    rows.push(row);
+    const card = h(
+      'div',
+      { class: 'editor-card' },
+      h(
+        'div',
+        { class: 'editor-head' },
+        h('span', null, 'Mouvement adapté'),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn icon',
+            'aria-label': 'Retirer cette adaptation',
+            onclick: () => {
+              rows.splice(rows.indexOf(row), 1);
+              card.remove();
+              onChange();
+            },
+          },
+          '✕',
+        ),
+      ),
+      select,
+      replaced,
+      schemeHint,
+      amountRow,
+      h('div', { class: 'field-row' }, weight, weightUnit),
+    );
+    card.addEventListener('input', onChange);
+    rowsEl.append(card);
+  }
+
+  initial.forEach((adjustment) => addRow(adjustment));
+  const el = h(
+    'div',
+    { class: 'field' },
+    h('span', { class: 'field-label' }, 'Adaptations (facultatif)'),
+    h(
+      'p',
+      { class: 'hint left' },
+      'Charge allégée, reps en moins, mouvement remplacé : note ce que tu as vraiment fait. La séance passe alors en scaled.',
+    ),
+    rowsEl,
+    choices.length > 0 &&
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'btn block',
+          onclick: () => {
+            addRow();
+            onChange();
+          },
+        },
+        '+ Adapter un mouvement',
+      ),
+  );
+  return { el, read: () => rows.map((row) => row.read()).filter((adjustment) => adjustment !== null) };
+}
 
 export function scoreView(resultId?: string): View | null {
   const found = context(resultId);
@@ -183,6 +308,21 @@ export function scoreView(resultId?: string): View | null {
           ? numberInput(draft.reps_completed, 'Reps réalisées')
           : numberInput(draft.segments_completed, 'Segments terminés', segmentCount);
       const timeField = field('Temps', minutes, 'min', seconds, 's');
+      const readTime = () => {
+        const min = readNumber(minutes);
+        const sec = readNumber(seconds);
+        return min === undefined && sec === undefined ? undefined : (min ?? 0) * 60 + (sec ?? 0);
+      };
+      // Un temps au-delà du cap reste valable : la séance est simplement marquée hors cap.
+      const cap = wod.time_cap_sec;
+      const capHint = h('p', { class: 'hint left', hidden: true });
+      if (cap !== undefined) capHint.textContent = `Au-delà du time cap de ${clock(cap)} : la séance sera marquée hors cap.`;
+      const refreshCap = () => {
+        const time = readTime();
+        capHint.hidden = !(finished && cap !== undefined && time !== undefined && time > cap);
+      };
+      minutes.addEventListener('input', refreshCap);
+      seconds.addEventListener('input', refreshCap);
       const partialField =
         segmentCount === null
           ? field('Reps réalisées au time cap', partial)
@@ -199,19 +339,19 @@ export function scoreView(resultId?: string): View | null {
         no.setAttribute('aria-pressed', String(!value));
         timeField.hidden = !value;
         partialField.hidden = value;
+        refreshCap();
       };
       setFinished(finished);
       typeFields.push(
         h('div', { class: 'segmented' }, yes, no),
         timeField,
+        capHint,
         partialField,
         splitsRecap(splits, `Temps par ${segmentCount === null ? 'tour' : 'segment'}, relevés au chrono`),
       );
       read = () => {
         if (finished) {
-          const min = readNumber(minutes);
-          const sec = readNumber(seconds);
-          const time = min === undefined && sec === undefined ? undefined : (min ?? 0) * 60 + (sec ?? 0);
+          const time = readTime();
           // Les temps relevés ne sont gardés que s'ils correspondent encore au temps final.
           const keep = draft.finished === true && splits?.length === fullCount && time === draft.time_sec;
           return { finished, time_sec: time, ...(keep && { splits_sec: splits }) };
@@ -230,6 +370,10 @@ export function scoreView(resultId?: string): View | null {
   }
 
   const rx = h('input', { type: 'checkbox', checked: draft.rx });
+  // Une séance adaptée n'est plus Rx.
+  const adjustments = adjustmentsEditor(wod, draft.adjustments ?? [], () => {
+    if (adjustments.read().length > 0) rx.checked = false;
+  });
   let rpe = draft.rpe;
   const rpeButtons = Array.from({ length: 10 }, (_, i) => i + 1).map((value) =>
     h(
@@ -258,7 +402,9 @@ export function scoreView(resultId?: string): View | null {
         null,
         errors.map((error) => {
           const [key = '', ...rest] = error.split(' : ');
-          return h('li', null, rest.length > 0 ? `${FIELD_LABELS[key] ?? key} : ${rest.join(' : ')}` : error);
+          const adjusted = /^adjustments\[(\d+)\]/.exec(key);
+          const label = adjusted ? `Adaptation ${Number(adjusted[1]) + 1}` : (FIELD_LABELS[key] ?? key);
+          return h('li', null, rest.length > 0 ? `${label} : ${rest.join(' : ')}` : error);
         }),
       ),
     );
@@ -268,7 +414,9 @@ export function scoreView(resultId?: string): View | null {
 
   const submit = (event: Event) => {
     event.preventDefault();
-    const raw: Record<string, unknown> = { ...read(), rx: rx.checked };
+    const done = adjustments.read();
+    const raw: Record<string, unknown> = { ...read(), rx: rx.checked && done.length === 0 };
+    if (done.length > 0) raw.adjustments = done;
     if (rpe !== undefined) raw.rpe = rpe;
     if (notes.value.trim() !== '') raw.notes = notes.value;
 
@@ -286,7 +434,11 @@ export function scoreView(resultId?: string): View | null {
       const id = newId();
       saveResult({ id, ...(wodId && { wod_id: wodId }), date: date.value, wod, score });
       setSession(null);
-      toast(currentRecords().has(id) ? 'Nouveau record !' : 'Séance enregistrée');
+      const record = currentRecords().has(id);
+      if (record) confetti(220);
+      const saved = findResult(id);
+      const advice = saved && coachReady(loadCoach()) ? { label: 'Avis du coach', run: () => askAdvice(saved) } : undefined;
+      toast(record ? 'Nouveau record !' : 'Séance enregistrée', advice);
       navigate('/history', true);
     }
   };
@@ -309,7 +461,7 @@ export function scoreView(resultId?: string): View | null {
     h(
       'div',
       { class: 'sheet-top' },
-      typeBadge(wod),
+      badges(wod),
       h('strong', null, wod.title),
       h('span', { class: 'summary' }, wodSummary(wod)),
     ),
@@ -318,6 +470,7 @@ export function scoreView(resultId?: string): View | null {
       'form',
       { class: 'form', novalidate: true, onsubmit: submit },
       typeFields,
+      adjustments.el,
       h('label', { class: 'check' }, rx, h('span', null, 'Rx : fait comme prescrit, sans scaling')),
       h(
         'div',

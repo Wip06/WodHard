@@ -2,8 +2,9 @@ import './style.css';
 import { toast } from './dom';
 import { render, startRouter, type View } from './router';
 import { DATA_KEY, getSession, loadData, loadSession } from './store';
-import { askView } from './views/ask';
 import { chronoRunView, chronoView } from './views/chrono';
+import { chatView } from './views/chat';
+import { coachView } from './views/coach';
 import { dataView } from './views/data';
 import { editorView } from './views/editor';
 import { historyView, resultView } from './views/history';
@@ -14,9 +15,10 @@ import { addWodView, wodDetailView, wodListView } from './views/wods';
 const routes: [RegExp, (...params: string[]) => View | null][] = [
   [/^\/$/, wodListView],
   [/^\/add$/, addWodView],
-  [/^\/ask$/, askView],
+  [/^\/ask$/, chatView],
   [/^\/chrono$/, chronoView],
   [/^\/chrono\/run$/, chronoRunView],
+  [/^\/coach$/, coachView],
   [/^\/edit(?:\/([\w-]+))?$/, (id) => editorView(id)],
   [/^\/copy\/([\w-]+)$/, (id) => editorView(id, true)],
   [/^\/wod\/([\w-]+)$/, wodDetailView],

@@ -24,17 +24,36 @@ export function h<K extends keyof HTMLElementTagNameMap>(
 
 let toastTimer = 0;
 
-export function toast(message: string): void {
+/** Notification brève. Avec `action` (« Annuler »), elle reste plus longtemps et propose un bouton. */
+export function toast(message: string, action?: { label: string; run: () => void }): void {
   let el = document.querySelector<HTMLElement>('.toast');
   if (!el) {
     el = h('div', { class: 'toast', role: 'status' });
     document.body.append(el);
   }
   const target = el;
-  target.textContent = message;
+  target.replaceChildren(
+    message,
+    ...(action
+      ? [
+          h(
+            'button',
+            {
+              class: 'toast-action',
+              onclick: () => {
+                dismissToast();
+                action.run();
+              },
+            },
+            action.label,
+          ),
+        ]
+      : []),
+  );
+  target.classList.toggle('has-action', action !== undefined);
   target.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => target.classList.remove('show'), 2800);
+  toastTimer = window.setTimeout(() => target.classList.remove('show'), action ? 6000 : 2800);
 }
 
 export function dismissToast(): void {

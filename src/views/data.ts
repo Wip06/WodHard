@@ -2,6 +2,7 @@ import { choose, h, toast } from '../dom';
 import { plural, today } from '../format';
 import { render, type View } from '../router';
 import { applyBackup, backupStatus, buildBackup, getWods, lastExport, markExported, sortedResults } from '../store';
+import { coachReady, loadCoach } from '../gemini';
 import { parseBackup } from '../validate';
 import { pageHead } from './parts';
 
@@ -123,6 +124,11 @@ export function dataView(): View {
       { class: 'stack' },
       h('button', { class: 'btn primary block', onclick: () => void exportData() }, 'Exporter mes données'),
       h('button', { class: 'btn block', onclick: () => picker.click() }, 'Importer une sauvegarde'),
+      h(
+        'a',
+        { class: 'btn block', href: '#/coach' },
+        coachReady(loadCoach()) ? 'Coach Gemini : configuré' : 'Configurer le coach Gemini',
+      ),
       picker,
       errorBox,
     ),

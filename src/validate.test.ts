@@ -87,9 +87,29 @@ describe('validateWod', () => {
     );
   });
 
-  it('interdit les quantités quand rep_scheme est défini', () => {
-    expect(errorsOf({ ...fran, movements: [{ name: 'Thruster', reps: 21 }] })).toEqual([
-      'movements[0] : reps interdit quand rep_scheme est défini',
+  it('avec rep_scheme, garde la quantité fixe d’un mouvement qui en a une', () => {
+    const wod = valid({ ...fran, movements: [{ name: 'Thruster', load_kg: 43 }, { name: 'Run', distance_m: 200 }] });
+    expect(wod.type === 'for_time' && wod.movements[1]).toEqual({ name: 'Run', distance_m: 200 });
+    expect(errorsOf({ ...fran, movements: [{ name: 'Row', reps: 5, calories: 10 }] })).toEqual([
+      'movements[0] : au plus un champ parmi reps, distance_m, calories, duration_sec (reçu : reps, calories)',
+    ]);
+  });
+
+  it('accepte une paire de charges, avec la charge d’une main', () => {
+    const wod = valid({ ...cindy, movements: [{ name: 'Farmers carry', distance_m: 100, load_kg: 24, load_count: 2 }] });
+    expect(wod.type === 'amrap' && wod.movements[0]?.load_count).toBe(2);
+    expect(errorsOf({ ...cindy, movements: [{ name: 'Lunge', reps: 10, load_count: 2 }] })).toEqual([
+      'movements[0].load_count : demande aussi load_kg',
+    ]);
+    expect(errorsOf({ ...cindy, movements: [{ name: 'Lunge', reps: 10, load_kg: 15, load_count: 3 }] })).toEqual([
+      'movements[0].load_count : doit valoir 1 ou 2',
+    ]);
+  });
+
+  it('accepte un WOD en équipe de 2 à 4', () => {
+    expect(valid({ ...cindy, team_size: 2 })).toMatchObject({ team_size: 2 });
+    expect(errorsOf({ ...cindy, team_size: 1 })).toEqual([
+      'team_size : doit être compris entre 2 et 4 (à omettre pour un WOD en solo)',
     ]);
   });
 
@@ -248,6 +268,34 @@ describe('validateScore', () => {
     });
   });
 
+  it('valide ce qui a été fait autrement que prescrit', () => {
+    const amrap = valid(cindy);
+    const score = { rounds: 10, extra_reps: 0, rx: false };
+    const ok = (adjustments: unknown) => validateScore({ ...score, adjustments }, amrap);
+    expect(ok([{ index: 0, name: 'Pull-up', reps: 3 }]).ok).toBe(true);
+    expect(ok([{ index: 0, name: 'Pull-up', replaced_by: 'Ring row' }]).ok).toBe(true);
+    expect(ok([{ index: 2, name: 'Air squat', replaced_by: 'Rowing', calories: 5 }]).ok).toBe(true);
+    expect(ok([{ index: 3, name: 'Burpee', reps: 3 }])).toEqual({
+      ok: false,
+      errors: ['adjustments[0].index : aucun mouvement n° 3 dans ce WOD'],
+    });
+    expect(ok([{ index: 1, name: 'Pull-up', reps: 3 }])).toEqual({
+      ok: false,
+      errors: ['adjustments[0].name : le mouvement n° 1 est « Push-up »'],
+    });
+    expect(ok([{ index: 0, name: 'Pull-up', distance_m: 3 }])).toEqual({
+      ok: false,
+      errors: ['adjustments[0].distance_m : ce mouvement se mesure en reps'],
+    });
+    expect(ok([{ index: 0, name: 'Pull-up' }])).toEqual({ ok: false, errors: ['adjustments[0] : aucune valeur réalisée'] });
+    const forTime = valid(fran);
+    expect(validateScore({ finished: true, time_sec: 400, rx: false, adjustments: [{ index: 0, name: 'Thruster', load_kg: 30 }] }, forTime).ok).toBe(true);
+    expect(validateScore({ finished: true, time_sec: 400, rx: false, adjustments: [{ index: 0, name: 'Thruster', reps: 15 }] }, forTime)).toEqual({
+      ok: false,
+      errors: ['adjustments[0].reps : ce mouvement suit le schéma de reps : seule la charge change'],
+    });
+  });
+
   it('borne les intervalles tenus et le RPE', () => {
     expect(validateScore({ intervals_completed: 13, rx: true }, valid(emom))).toEqual({
       ok: false,
@@ -304,7 +352,7 @@ describe('validateBackup', () => {
 describe('instructions du projet Claude', () => {
   it('ne donnent que des exemples acceptés par l’application', () => {
     const blocks = [...instructions.matchAll(/```json\n([\s\S]*?)```/g)].map((match) => match[1] ?? '');
-    expect(blocks).toHaveLength(7);
+    expect(blocks).toHaveLength(8);
     for (const block of blocks) expect(parseImport(block)).toMatchObject({ ok: true });
   });
 });

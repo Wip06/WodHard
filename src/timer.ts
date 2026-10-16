@@ -20,6 +20,8 @@ export interface Frame {
   seconds: number;
   /** Intervalle EMOM en cours, à partir de 0. */
   interval: number;
+  /** For Time et Hyrox : le time cap est passé, le chrono continue jusqu'au « Finish ». */
+  overtime: boolean;
 }
 
 export const newClock = (now: number): Clock => ({ accumMs: -COUNTDOWN_MS, resumedAt: now });
@@ -46,27 +48,29 @@ export function totalMs(wod: Wod): number {
   }
 }
 
+/**
+ * État du chrono à un instant. Un AMRAP ou un EMOM se termine avec sa durée ; un For Time ou un
+ * Hyrox ne se termine jamais tout seul : passé le cap, il continue en « hors cap » jusqu'au Finish.
+ */
 export function frame(wod: Wod, ms: number): Frame {
   const total = totalMs(wod);
-  if (ms < 0) return { phase: 'countdown', seconds: Math.ceil(-ms / 1000), interval: 0 };
+  if (ms < 0) return { phase: 'countdown', seconds: Math.ceil(-ms / 1000), interval: 0, overtime: false };
+  if (wod.type === 'for_time' || wod.type === 'hyrox') {
+    return { phase: 'running', seconds: Math.floor(ms / 1000), interval: 0, overtime: ms >= total };
+  }
   if (ms >= total) {
-    return {
-      phase: 'done',
-      seconds: wod.type === 'for_time' || wod.type === 'hyrox' ? total / 1000 : 0,
-      interval: wod.type === 'emom' ? wod.intervals - 1 : 0,
-    };
+    return { phase: 'done', seconds: 0, interval: wod.type === 'emom' ? wod.intervals - 1 : 0, overtime: false };
   }
-  switch (wod.type) {
-    case 'amrap':
-      return { phase: 'running', seconds: Math.ceil((total - ms) / 1000), interval: 0 };
-    case 'emom': {
-      const span = wod.interval_sec * 1000;
-      return { phase: 'running', seconds: Math.ceil((span - (ms % span)) / 1000), interval: Math.floor(ms / span) };
-    }
-    case 'for_time':
-    case 'hyrox':
-      return { phase: 'running', seconds: Math.floor(ms / 1000), interval: 0 };
+  if (wod.type === 'amrap') {
+    return { phase: 'running', seconds: Math.ceil((total - ms) / 1000), interval: 0, overtime: false };
   }
+  const span = wod.interval_sec * 1000;
+  return {
+    phase: 'running',
+    seconds: Math.ceil((span - (ms % span)) / 1000),
+    interval: Math.floor(ms / span),
+    overtime: false,
+  };
 }
 
 /** Durée de chaque segment en secondes entières, à partir des temps de passage cumulés. */

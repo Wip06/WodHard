@@ -7,7 +7,26 @@ export interface Movement {
   calories?: number;
   duration_sec?: number;
   load_kg?: number;
+  /** 2 pour une paire de charges (deux haltères, farmers carry) : `load_kg` est alors la charge d'une main. */
+  load_count?: number;
   notes?: string;
+}
+
+/**
+ * Mouvement fait autrement que prescrit. `index` le repère dans l'ordre des mouvements du WOD
+ * (voir allMovements) ; seules les valeurs qui ont changé sont présentes.
+ */
+export interface Adjustment {
+  index: number;
+  name: string;
+  /** Mouvement fait à la place de celui prescrit (ex. « Ring row » pour « Pull-up »). */
+  replaced_by?: string;
+  reps?: number;
+  distance_m?: number;
+  calories?: number;
+  duration_sec?: number;
+  load_kg?: number;
+  load_count?: number;
 }
 
 interface WodBase {
@@ -16,6 +35,8 @@ interface WodBase {
   description?: string;
   warmup?: string;
   equipment?: string[];
+  /** WOD à plusieurs (2 = duo) : les quantités sont celles de toute l'équipe, les charges celles d'un athlète. */
+  team_size?: number;
 }
 
 export interface AmrapWod extends WodBase {
@@ -36,7 +57,7 @@ export interface ForTimeWod extends WodBase {
   type: 'for_time';
   time_cap_sec: number;
   rounds: number;
-  /** Ex. [21, 15, 9] : les mouvements n'ont alors pas de quantité propre. */
+  /** Ex. [21, 15, 9] : reps de chaque tour pour les mouvements sans quantité ; un mouvement avec quantité la garde à chaque tour. */
   rep_scheme?: number[];
   movements: Movement[];
 }
@@ -55,6 +76,8 @@ interface ScoreBase {
   rx: boolean;
   rpe?: number;
   notes?: string;
+  /** Ce qui a été réellement fait quand ce n'est pas le prescrit ; la séance est alors scaled. */
+  adjustments?: Adjustment[];
 }
 
 /**

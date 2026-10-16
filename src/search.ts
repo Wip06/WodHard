@@ -1,5 +1,6 @@
-import { typeLabel, wodSummary } from './format';
-import type { Movement, Wod } from './types';
+import { typeLabel, wodHeadline } from './format';
+import { allMovements, nameVariants } from './movements';
+import type { Wod } from './types';
 
 /** Minuscules sans accents : « Échauffé » et « echauffe » se valent. */
 const normalize = (text: string) =>
@@ -8,23 +9,14 @@ const normalize = (text: string) =>
     .replace(/\p{Diacritic}/gu, '')
     .toLowerCase();
 
-function movementsOf(wod: Wod): Movement[] {
-  switch (wod.type) {
-    case 'emom':
-      return wod.slots.flat();
-    case 'hyrox':
-      return wod.segments;
-    default:
-      return wod.movements;
-  }
-}
-
-/** Texte dans lequel un WOD est cherché : titre, type, résumé, description, matériel et mouvements. */
+/**
+ * Texte dans lequel un WOD est cherché : titre, type, résumé (avec « Duo »), description, matériel
+ * et mouvements, avec leurs variantes connues (« rameur » retrouve « Rowing »).
+ */
 export function searchText(wod: Wod): string {
-  const movements = movementsOf(wod).flatMap((movement) => [movement.name, movement.notes ?? '']);
-  return normalize(
-    [wod.title, typeLabel(wod.type), wodSummary(wod), wod.description ?? '', ...(wod.equipment ?? []), ...movements].join(' '),
-  );
+  const movements = allMovements(wod).flatMap((movement) => [movement.name, ...nameVariants(movement.name), movement.notes ?? '']);
+  const equipment = (wod.equipment ?? []).flatMap((item) => [item, ...nameVariants(item)]);
+  return normalize([wod.title, typeLabel(wod.type), wodHeadline(wod), wod.description ?? '', ...equipment, ...movements].join(' '));
 }
 
 /** Vrai si chaque mot de la recherche figure dans le texte (déjà normalisé par searchText). */

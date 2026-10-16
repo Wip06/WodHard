@@ -1,5 +1,6 @@
 import { toast } from './dom';
 import { addDays, mondayOf, today } from './format';
+import { knownNames, normalizeWod } from './movements';
 import { recordIds, workKey } from './records';
 import type { Clock } from './timer';
 import type { AppData, Backup, HistoryExport, PlanEntry, ProgramItem, Result, SavedWod, Wod } from './types';
@@ -95,19 +96,27 @@ export const getWods = (): readonly SavedWod[] => data.wods;
 export const findWod = (id: string) => data.wods.find((saved) => saved.id === id);
 export const findResult = (id: string) => data.results.find((result) => result.id === id);
 
-function insertWod(wod: Wod): { saved: SavedWod; duplicate: boolean } {
+/** Orthographes déjà utilisées dans l'appli, reprises pour les noms qui n'ont pas de nom retenu. */
+const known = () => knownNames([...data.wods.map((saved) => saved.wod), ...data.results.map((result) => result.wod)]);
+
+function insertWod(raw: Wod): { saved: SavedWod; duplicate: boolean } {
+  const names = known();
+  const wod = normalizeWod(raw, names);
   const json = JSON.stringify(wod);
-  const existing = data.wods.find((saved) => JSON.stringify(saved.wod) === json);
+  // Un WOD enregistré avant la normalisation des noms reste reconnu comme doublon.
+  const existing = data.wods.find((saved) => JSON.stringify(normalizeWod(saved.wod, names)) === json);
   if (existing) return { saved: existing, duplicate: true };
   const saved: SavedWod = { id: newId(), added_at: new Date().toISOString(), wod };
   data.wods.push(saved);
   return { saved, duplicate: false };
 }
 
-function insertPlan(wodId: string, date: string): boolean {
-  if (data.plan.some((entry) => entry.wod_id === wodId && entry.date === date)) return false;
-  data.plan.push({ id: newId(), date, wod_id: wodId });
-  return true;
+/** Ajoute une séance au programme ; null si ce WOD est déjà prévu ce jour-là. */
+function insertPlan(wodId: string, date: string): PlanEntry | null {
+  if (data.plan.some((entry) => entry.wod_id === wodId && entry.date === date)) return null;
+  const entry: PlanEntry = { id: newId(), date, wod_id: wodId };
+  data.plan.push(entry);
+  return entry;
 }
 
 /** Ajoute un WOD ; s'il est déjà enregistré à l'identique, renvoie l'existant. */
@@ -124,7 +133,7 @@ export function addProgram(items: ProgramItem[]): { added: number; planned: numb
   for (const { date, wod } of items) {
     const { saved, duplicate } = insertWod(wod);
     if (!duplicate) added++;
-    if (date !== undefined && insertPlan(saved.id, date)) planned++;
+    if (date !== undefined && insertPlan(saved.id, date) !== null) planned++;
   }
   saveData();
   return { added, planned };
@@ -134,7 +143,7 @@ export function addProgram(items: ProgramItem[]): { added: number; planned: numb
 export function updateWod(id: string, wod: Wod): void {
   const saved = findWod(id);
   if (!saved) return;
-  saved.wod = wod;
+  saved.wod = normalizeWod(wod, known());
   saveData();
 }
 
@@ -146,9 +155,118 @@ export function deleteWod(id: string): void {
 
 /** Planifie un WOD. Renvoie false s'il était déjà prévu ce jour-là. */
 export function addPlan(wodId: string, date: string): boolean {
-  const planned = insertPlan(wodId, date);
+  const planned = insertPlan(wodId, date) !== null;
   if (planned) saveData();
   return planned;
+}
+
+/** Éléments retirés d'une liste, avec leur place, pour pouvoir les y remettre. */
+type Removed<T> = { item: T; index: number }[];
+
+function takeOut<T>(list: T[], remove: (item: T) => boolean): { kept: T[]; removed: Removed<T> } {
+  const removed = list.map((item, index) => ({ item, index })).filter(({ item }) => remove(item));
+  return { kept: list.filter((item) => !remove(item)), removed };
+}
+
+/** Remet des éléments retirés à leur place d'origine, sauf ceux qui y sont déjà revenus. */
+function putBack<T extends { id: string }>(list: T[], removed: Removed<T>): void {
+  for (const { item, index } of removed) {
+    if (!list.some((other) => other.id === item.id)) list.splice(Math.min(index, list.length), 0, item);
+  }
+}
+
+/**
+ * Supprime des WOD de la bibliothèque, et donc du programme. Les séances faites gardent leur copie
+ * du WOD. Renvoie de quoi annuler la suppression.
+ */
+export function removeWods(ids: string[]): () => void {
+  const targets = new Set(ids);
+  const wods = takeOut(data.wods, (saved) => targets.has(saved.id));
+  const plan = takeOut(data.plan, (entry) => targets.has(entry.wod_id));
+  data.wods = wods.kept;
+  data.plan = plan.kept;
+  saveData();
+  return () => {
+    putBack(data.wods, wods.removed);
+    putBack(data.plan, plan.removed);
+    saveData();
+  };
+}
+
+/** Retire des séances du programme ; les WOD restent dans la bibliothèque. Renvoie de quoi annuler. */
+export function removePlanEntries(ids: string[]): () => void {
+  const targets = new Set(ids);
+  const plan = takeOut(data.plan, (entry) => targets.has(entry.id));
+  data.plan = plan.kept;
+  saveData();
+  return () => {
+    putBack(data.plan, plan.removed);
+    saveData();
+  };
+}
+
+export interface ReschedulePreview {
+  /** Séances qui bougeront : celles qui ne sont pas encore faites. */
+  moved: number;
+  /** Séances sélectionnées mais déjà faites : elles restent à leur date. */
+  skippedDone: number;
+  /** Nouvelles dates qui tomberaient un jour déjà pris par une autre séance. */
+  conflicts: string[];
+}
+
+const pendingAmong = (ids: Set<string>) => data.plan.filter((entry) => ids.has(entry.id) && entry.result_id === undefined);
+
+/** Dates actuelles des séances à reprogrammer, de la plus proche à la plus lointaine. */
+export const pendingDates = (ids: string[]) =>
+  pendingAmong(new Set(ids))
+    .map((entry) => entry.date)
+    .sort();
+
+/** Ce que donnerait un décalage de `offset` jours, sans rien modifier. */
+export function previewReschedule(ids: string[], offset: number): ReschedulePreview {
+  const targets = new Set(ids);
+  const selected = data.plan.filter((entry) => targets.has(entry.id));
+  const pending = pendingAmong(targets);
+  const staying = new Set(
+    data.plan.filter((entry) => !targets.has(entry.id) || entry.result_id !== undefined).map((entry) => entry.date),
+  );
+  const conflicts = [...new Set(pending.map((entry) => addDays(entry.date, offset)).filter((date) => staying.has(date)))].sort();
+  return { moved: pending.length, skippedDone: selected.length - pending.length, conflicts };
+}
+
+/** Dates données aux WOD planifiés en série : le premier à `start`, puis un tous les `every` jours. */
+const seriesDates = (count: number, start: string, every: number) =>
+  Array.from({ length: count }, (_, i) => addDays(start, i * every));
+
+/** Dates de la série qui tomberaient un jour où une séance est déjà prévue. */
+export function previewPlanning(wodIds: string[], start: string, every: number): string[] {
+  const taken = new Set(data.plan.map((entry) => entry.date));
+  return seriesDates(wodIds.length, start, every).filter((date) => taken.has(date));
+}
+
+/** Planifie des WOD de la bibliothèque dans l'ordre donné. Renvoie de quoi annuler. */
+export function planWods(wodIds: string[], start: string, every: number): () => void {
+  const dates = seriesDates(wodIds.length, start, every);
+  const created = wodIds
+    .map((id, i) => insertPlan(id, dates[i] ?? start))
+    .filter((entry): entry is PlanEntry => entry !== null)
+    .map((entry) => entry.id);
+  saveData();
+  return () => {
+    data.plan = data.plan.filter((entry) => !created.includes(entry.id));
+    saveData();
+  };
+}
+
+/** Décale de `offset` jours les séances non faites, en gardant leurs écarts. Renvoie de quoi annuler. */
+export function reschedulePlan(ids: string[], offset: number): () => void {
+  const moved = pendingAmong(new Set(ids)).map((entry) => ({ entry, date: entry.date }));
+  for (const { entry } of moved) entry.date = addDays(entry.date, offset);
+  saveData();
+  return () => {
+    for (const { entry, date } of moved) entry.date = date;
+    saveData();
+  };
 }
 
 export function removePlan(id: string): void {

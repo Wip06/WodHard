@@ -65,14 +65,20 @@ describe('frame', () => {
   });
 
   it('décompte chaque intervalle d’un EMOM', () => {
-    expect(frame(emom, 0)).toEqual({ phase: 'running', seconds: 30, interval: 0 });
-    expect(frame(emom, 45_000)).toEqual({ phase: 'running', seconds: 15, interval: 1 });
-    expect(frame(emom, 90_000)).toEqual({ phase: 'done', seconds: 0, interval: 2 });
+    expect(frame(emom, 0)).toEqual({ phase: 'running', seconds: 30, interval: 0, overtime: false });
+    expect(frame(emom, 45_000)).toEqual({ phase: 'running', seconds: 15, interval: 1, overtime: false });
+    expect(frame(emom, 90_000)).toEqual({ phase: 'done', seconds: 0, interval: 2, overtime: false });
   });
 
-  it('compte le temps écoulé d’un For Time jusqu’au time cap', () => {
-    expect(frame(forTime, 65_900)).toMatchObject({ phase: 'running', seconds: 65 });
-    expect(frame(forTime, 500_000)).toMatchObject({ phase: 'done', seconds: 120 });
+  it('compte le temps écoulé d’un For Time, et continue hors cap au lieu de s’arrêter', () => {
+    expect(frame(forTime, 65_900)).toMatchObject({ phase: 'running', seconds: 65, overtime: false });
+    expect(frame(forTime, 120_000)).toMatchObject({ phase: 'running', seconds: 120, overtime: true });
+    expect(frame(forTime, 500_000)).toMatchObject({ phase: 'running', seconds: 500, overtime: true });
+  });
+
+  it('termine un AMRAP et un EMOM à la fin de leur durée, sans hors cap', () => {
+    expect(frame(amrap, 60_000)).toMatchObject({ phase: 'done', overtime: false });
+    expect(frame(emom, 120_000)).toMatchObject({ phase: 'done', overtime: false });
   });
 });
 
@@ -83,10 +89,12 @@ describe('Hyrox', () => {
     expect(cuesBetween(hyrox, 3_599_000, 3_600_000)).toEqual([]);
   });
 
-  it('s’arrête au time cap quand il y en a un', () => {
+  it('signale le time cap puis continue hors cap', () => {
     const capped = { ...hyrox, time_cap_sec: 1800 };
-    expect(frame(capped, 1_800_000)).toMatchObject({ phase: 'done', seconds: 1800 });
+    expect(frame(capped, 1_799_000)).toMatchObject({ phase: 'running', overtime: false });
+    expect(frame(capped, 1_800_000)).toMatchObject({ phase: 'running', seconds: 1800, overtime: true });
     expect(cuesBetween(capped, 1_799_950, 1_800_050)).toEqual(['end']);
+    expect(cuesBetween(capped, 1_800_050, 1_900_000)).toEqual([]);
   });
 
   it('déduit la durée de chaque segment des temps de passage', () => {

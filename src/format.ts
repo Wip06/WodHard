@@ -9,6 +9,15 @@ export const typeLabel = (type: WodType) => TYPE_LABELS[type];
 export const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`;
 export const kg = (load: number) => `${decimal(load)} kg`;
 
+/** Charge d'un mouvement : « 24 kg », ou « 2 × 24 kg » pour une paire. */
+export function load(movement: { load_kg?: number; load_count?: number }): string | null {
+  if (movement.load_kg === undefined) return null;
+  return movement.load_count === 2 ? `2 × ${kg(movement.load_kg)}` : kg(movement.load_kg);
+}
+
+/** 2 → « Duo », 3 → « Équipe de 3 ». */
+export const teamLabel = (size: number) => (size === 2 ? 'Duo' : `Équipe de ${size}`);
+
 /** 754 → "12:34", 3725 → "1:02:05". */
 export function clock(totalSec: number): string {
   const h = Math.floor(totalSec / 3600);
@@ -35,9 +44,10 @@ export function quantity(movement: Movement, schemeReps?: number): string | null
   return schemeReps === undefined ? null : String(schemeReps);
 }
 
-export function movementText(movement: Movement): string {
-  const head = [quantity(movement), movement.name].filter(Boolean).join(' ');
-  return movement.load_kg === undefined ? head : `${head} (${kg(movement.load_kg)})`;
+export function movementText(movement: Movement, schemeReps?: number): string {
+  const head = [quantity(movement, schemeReps), movement.name].filter(Boolean).join(' ');
+  const weight = load(movement);
+  return weight === null ? head : `${head} (${weight})`;
 }
 
 export function wodSummary(wod: Wod): string {
@@ -58,6 +68,9 @@ export function wodSummary(wod: Wod): string {
     }
   }
 }
+
+/** Le résumé, précédé de l'équipe pour un WOD à plusieurs. */
+export const wodHeadline = (wod: Wod) => (wod.team_size ? `${teamLabel(wod.team_size)} · ${wodSummary(wod)}` : wodSummary(wod));
 
 export function scoreLine(wod: Wod, score: Score): string {
   if ('rounds' in score) {
@@ -89,6 +102,12 @@ export function addDays(isoDate: string, days: number): string {
   const date = fromIso(isoDate);
   date.setDate(date.getDate() + days);
   return toIso(date);
+}
+
+/** Nombre de jours de `from` à `to`, négatif si `to` est avant. */
+export function daysBetween(from: string, to: string): number {
+  // Arrondi : un changement d'heure donne un jour de 23 ou 25 heures.
+  return Math.round((fromIso(to).getTime() - fromIso(from).getTime()) / 86_400_000);
 }
 
 /** Lundi de la semaine qui contient la date. */
