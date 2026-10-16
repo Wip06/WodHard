@@ -1,6 +1,6 @@
 import { playCue, unlockAudio } from '../audio';
-import { confetti } from '../confetti';
 import { choose, h } from '../dom';
+import { celebrate } from '../fireworks';
 import { clock as clockText, duration, movementText, plural, wodHeadline } from '../format';
 import { navigate, type View } from '../router';
 import { isRest } from '../movements';
@@ -16,6 +16,8 @@ const MAX_CUE_GAP_MS = 1500;
 const URGENT_SEC = 3;
 /** Durée minimale d'un tour ou d'un segment, pour qu'un double appui n'en valide pas deux. */
 const MIN_SPLIT_MS = 1000;
+/** WOD terminé : les feux d'artifice durent jusqu'à ce que l'on quitte le chrono ou la saisie du score. */
+const CELEBRATION_SCREENS = ['/timer', '/score'];
 /** Bips avant la fin d'un repos, en secondes. */
 const REST_BEEPS = [3, 2, 1];
 
@@ -188,7 +190,7 @@ export function timerView(): View | null {
   }
 
   let planKey = '';
-  /** Les confettis ne partent qu'une fois, quand le temps d'un AMRAP ou d'un EMOM s'achève. */
+  /** Les feux d'artifice ne partent qu'une fois, quand le temps d'un AMRAP ou d'un EMOM s'achève. */
   let celebrated = frame(wod, now()).phase === 'done';
 
   function paint(): void {
@@ -198,7 +200,7 @@ export function timerView(): View | null {
     const running = f.phase === 'running';
     if (done && !celebrated) {
       celebrated = true;
-      confetti();
+      celebrate(CELEBRATION_SCREENS);
     }
     const paused = clock.resumedAt === null && !done;
     const countsDown = wod.type === 'amrap' || wod.type === 'emom';
@@ -338,7 +340,7 @@ export function timerView(): View | null {
     ]);
     if (!confirmed) return;
     if (stepped) marks.push(at);
-    confetti();
+    celebrate(CELEBRATION_SCREENS);
     finish(true, at);
   }
 

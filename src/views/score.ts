@@ -1,5 +1,5 @@
-import { confetti } from '../confetti';
 import { choose, h, toast } from '../dom';
+import { celebrate } from '../fireworks';
 import { clock, movementText, today, wodSummary } from '../format';
 import { coachReady, loadCoach } from '../gemini';
 import { allMovements, isRest } from '../movements';
@@ -435,11 +435,12 @@ export function scoreView(resultId?: string): View | null {
       saveResult({ id, ...(wodId && { wod_id: wodId }), date: date.value, wod, score });
       setSession(null);
       const record = currentRecords().has(id);
-      if (record) confetti(220);
       const saved = findResult(id);
       const advice = saved && coachReady(loadCoach()) ? { label: 'Avis du coach', run: () => askAdvice(saved) } : undefined;
       toast(record ? 'Nouveau record !' : 'Séance enregistrée', advice);
       navigate('/history', true);
+      // Un record prolonge la fête sur l'historique, jusqu'à ce que l'on en sorte.
+      if (record) celebrate(['/history']);
     }
   };
 
