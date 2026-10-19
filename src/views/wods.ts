@@ -22,6 +22,7 @@ import {
   reschedulePlan,
   resultsFor,
   setSession,
+  sortedResults,
   snoozeBackup,
   visiblePlan,
   type PlannedWod,
@@ -36,6 +37,8 @@ const MAX_ERRORS = 12;
 
 /** Recherche en cours sur l'écran WOD, conservée quand on revient d'une fiche. */
 let query = '';
+/** Section « Déjà faits » dépliée, conservée de la même façon. */
+let doneOpen = false;
 
 type Content = (HTMLElement | false)[];
 
@@ -43,7 +46,7 @@ function wodCardContent(saved: SavedWod): Content {
   const done = resultsFor(saved.id);
   const last = done[0];
   return [
-    h('span', { class: 'card-top' }, badges(saved.wod), !last && h('span', { class: 'chip todo' }, 'À faire')),
+    h('span', { class: 'card-top' }, badges(saved.wod), !!last && h('span', { class: 'chip rx' }, '✓ Fait')),
     h('strong', { class: 'card-title' }, saved.wod.title),
     h('span', { class: 'card-sub' }, wodSummary(saved.wod)),
     !!last &&
@@ -55,27 +58,22 @@ function wodCardContent(saved: SavedWod): Content {
   ];
 }
 
-function planState({ entry, done }: PlannedWod): string {
+function planState({ entry }: PlannedWod): string {
   const now = today();
-  return done ? 'done' : entry.date === now ? 'today' : entry.date < now ? 'late' : '';
+  return entry.date === now ? 'today' : entry.date < now ? 'late' : '';
 }
 
 function planCardContent(row: PlannedWod): Content {
-  const { entry, saved, done } = row;
-  const state = planState(row);
+  const { entry, saved } = row;
   return [
     h(
       'span',
       { class: 'card-top' },
       h('span', { class: 'day' }, dayLabel(entry.date)),
-      done
-        ? h('span', { class: 'chip rx' }, '✓ Fait')
-        : state === 'late'
-          ? h('span', { class: 'chip late' }, 'En retard')
-          : typeBadge(saved.wod),
+      planState(row) === 'late' ? h('span', { class: 'chip late' }, 'En retard') : typeBadge(saved.wod),
     ),
     h('strong', { class: 'card-title' }, saved.wod.title),
-    h('span', { class: 'card-sub' }, done ? scoreLine(done.wod, done.score) : wodHeadline(saved.wod)),
+    h('span', { class: 'card-sub' }, wodHeadline(saved.wod)),
   ];
 }
 
@@ -266,9 +264,20 @@ function askPlanning(count: number): Promise<{ start: string; every: number } | 
 }
 
 export function wodListView(): View {
-  const plan = visiblePlan();
+  // L'écran WOD montre ce qui reste à faire : une séance faite quitte le programme pour l'historique,
+  // et les WOD déjà faits descendent dans « Déjà faits », du plus récemment fait au plus ancien.
+  const plan = visiblePlan().filter((row) => !row.done);
   const planned = new Set(plan.map((row) => row.saved.id));
-  const others = [...getWods()].reverse().filter((saved) => !planned.has(saved.id));
+  const library = [...getWods()].reverse().filter((saved) => !planned.has(saved.id));
+  // Rang de la dernière séance de chaque WOD, de la plus récente à la plus ancienne.
+  const recency = new Map<string, number>();
+  sortedResults().forEach((result, rank) => {
+    if (result.wod_id !== undefined && !recency.has(result.wod_id)) recency.set(result.wod_id, rank);
+  });
+  const others = library.filter((saved) => !recency.has(saved.id));
+  const finished = library
+    .filter((saved) => recency.has(saved.id))
+    .sort((a, b) => (recency.get(a.id) ?? 0) - (recency.get(b.id) ?? 0));
   const backup = backupStatus();
   const index = new Map(getWods().map((saved) => [saved.id, searchText(saved.wod)]));
 
@@ -277,8 +286,9 @@ export function wodListView(): View {
   const selected = new Set<string>();
   let visibleKeys: string[] = [];
   const entryIds = () => [...selected].filter((key) => key.startsWith('plan:')).map((key) => key.slice(5));
-  /** WOD sélectionnés dans « Autres WOD », sans date au programme, dans l'ordre de la liste. */
-  const unplannedIds = () => others.filter((saved) => selected.has(`wod:${saved.id}`)).map((saved) => saved.id);
+  /** WOD sélectionnés hors du programme, sans date à venir, dans l'ordre de la liste. */
+  const unplannedIds = () =>
+    [...others, ...finished].filter((saved) => selected.has(`wod:${saved.id}`)).map((saved) => saved.id);
   const wodIds = () => {
     const ids = new Set([...selected].filter((key) => key.startsWith('wod:')).map((key) => key.slice(4)));
     for (const id of entryIds()) {
@@ -361,7 +371,33 @@ export function wodListView(): View {
     const found = (id: string) => matchesQuery(query, index.get(id) ?? '');
     const planFound = plan.filter((row) => found(row.saved.id));
     const othersFound = others.filter((saved) => found(saved.id));
-    visibleKeys = [...planFound.map((row) => `plan:${row.entry.id}`), ...othersFound.map((saved) => `wod:${saved.id}`)];
+    const finishedFound = finished.filter((saved) => found(saved.id));
+    // Une recherche déplie « Déjà faits » pour montrer tout ce qui correspond.
+    const searching = query.trim() !== '';
+    let shown = doneOpen || searching;
+    const openKeys = [...planFound.map((row) => `plan:${row.entry.id}`), ...othersFound.map((saved) => `wod:${saved.id}`)];
+    const doneKeys = finishedFound.map((saved) => `wod:${saved.id}`);
+    visibleKeys = shown ? [...openKeys, ...doneKeys] : openKeys;
+
+    const doneSection = h(
+      'details',
+      { class: 'done-section', open: shown },
+      h('summary', { class: 'section-title' }, `Déjà faits (${finishedFound.length})`),
+      h(
+        'ul',
+        { class: 'cards' },
+        finishedFound.map((saved) => card(`wod:${saved.id}`, `#/wod/${saved.id}`, 'done', wodCardContent(saved))),
+      ),
+    );
+    doneSection.addEventListener('toggle', () => {
+      if (doneSection.open === shown) return;
+      shown = doneSection.open;
+      if (!searching) doneOpen = shown;
+      // « Tout sélectionner » ne prend que les WOD visibles.
+      visibleKeys = shown ? [...openKeys, ...doneKeys] : openKeys;
+      refreshBar();
+    });
+
     lists.replaceChildren(
       h(
         'div',
@@ -376,14 +412,19 @@ export function wodListView(): View {
             ),
           ),
         ],
-        planFound.length > 0 && othersFound.length > 0 && h('h2', { class: 'section-title' }, 'Autres WOD'),
-        othersFound.length > 0 &&
+        othersFound.length > 0 && [
+          h('h2', { class: 'section-title' }, 'À faire'),
           h(
             'ul',
             { class: 'cards' },
             othersFound.map((saved) => card(`wod:${saved.id}`, `#/wod/${saved.id}`, '', wodCardContent(saved))),
           ),
-        planFound.length + othersFound.length === 0 && [
+        ],
+        !searching &&
+          planFound.length + othersFound.length === 0 &&
+          h('p', { class: 'empty' }, 'Tout est fait ! Demande un nouveau WOD au coach, ou refais un WOD déjà fait.'),
+        finishedFound.length > 0 && doneSection,
+        searching && planFound.length + othersFound.length + finishedFound.length === 0 && [
           h('p', { class: 'empty' }, `Aucun WOD ne correspond à « ${query.trim()} ».`),
           h(
             'button',
