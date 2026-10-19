@@ -53,19 +53,31 @@ export async function exportData(): Promise<void> {
   render();
 }
 
+/** Ouverte depuis l'écran d'accueil (appli installée) plutôt que dans un onglet du navigateur. */
+const installed = () =>
+  window.matchMedia('(display-mode: standalone)').matches ||
+  (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
 export function dataView(): View {
   const exported = lastExport();
   const errorBox = h('div', { class: 'errors', role: 'alert', hidden: true });
   const persisted = h('span', null, '…');
-  const installHint = h(
-    'p',
-    { class: 'hint', hidden: true },
-    'Installe l’appli sur l’écran d’accueil pour que le navigateur ne purge pas ses données.',
-  );
-  void navigator.storage?.persisted?.().then((yes) => {
-    persisted.textContent = yes ? 'oui' : 'non';
+  const installHint = h('p', { class: 'hint', hidden: true });
+  /**
+   * « oui » : le navigateur s'engage à ne pas effacer les données. Sinon, une appli installée
+   * échappe au moins à l'effacement après 7 jours sans ouverture (Safari), mais pas au manque de place.
+   */
+  const showProtection = (yes: boolean) => {
+    const home = installed();
+    persisted.textContent = yes ? 'oui' : home ? 'en partie' : 'non';
+    installHint.textContent = home
+      ? 'Installée sur l’écran d’accueil, l’appli n’est pas effacée après 7 jours sans ouverture. Le système peut quand même vider ses données si l’appareil manque de place : exporte une sauvegarde de temps en temps.'
+      : 'Installe l’appli sur l’écran d’accueil pour que le navigateur ne purge pas ses données.';
     installHint.hidden = yes;
-  });
+  };
+  const asked = navigator.storage?.persisted?.();
+  if (asked) void asked.then(showProtection, () => showProtection(false));
+  else showProtection(false);
 
   const importFile = async () => {
     const file = picker.files?.[0];
