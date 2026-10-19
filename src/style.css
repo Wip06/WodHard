@@ -179,6 +179,15 @@ a {
   font-size: 1.05rem;
 }
 
+.done-section > summary {
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.done-section[open] > summary {
+  margin-bottom: 12px;
+}
+
 /* Boutons */
 
 .btn {
