@@ -3,25 +3,28 @@ import { dateLabel, scoreLine } from '../format';
 import { coachReady, loadCoach } from '../gemini';
 import { navigate, type View } from '../router';
 import { isOverCap, lastSplits, scoreDelta } from '../records';
-import { currentRecords, deleteResult, findResult, findWod, sameWorkout, sortedResults } from '../store';
-import { adjustmentText, askAdvice, deltaChip, pageHead, resultRow, splitsList, wodSheet } from './parts';
+import { currentRecords, deleteResult, findResult, findWod, sameWorkout, sortedActivities, sortedResults } from '../store';
+import { activityRow, adjustmentText, askAdvice, deltaChip, pageHead, resultRow, splitsList, wodSheet } from './parts';
 
 /**
- * Toutes les séances, de la plus récente à la plus ancienne, depuis l'onglet Données. On y
- * retrouve aussi celles d'un WOD supprimé de la bibliothèque.
+ * Toutes les séances, WOD et autres sports, de la plus récente à la plus ancienne. On y retrouve
+ * aussi celles d'un WOD supprimé de la bibliothèque.
  */
 export function historyView(): View {
-  const results = sortedResults();
   const records = currentRecords();
+  const rows = [
+    ...sortedResults().map((result) => ({ date: result.date, row: () => resultRow(result, true, records.has(result.id)) })),
+    ...sortedActivities().map((activity) => ({ date: activity.date, row: () => activityRow(activity) })),
+  ].sort((a, b) => b.date.localeCompare(a.date));
   const el = h(
     'section',
     { class: 'page' },
     pageHead('Toutes mes séances', { href: '#/data', label: 'Données' }),
-    results.length > 0
+    rows.length > 0
       ? h(
           'ul',
           { class: 'cards' },
-          results.map((result) => resultRow(result, true, records.has(result.id))),
+          rows.map(({ row }) => row()),
         )
       : h('p', { class: 'empty' }, 'Aucune séance pour l’instant. Lance un WOD et saisis ton score : elle apparaîtra ici.'),
   );

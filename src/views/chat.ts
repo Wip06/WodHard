@@ -71,7 +71,7 @@ function trim(messages: Turn[]): Turn[] {
 function withContext(messages: Turn[]): Turn[] {
   const history = buildHistory(HISTORY_LIMIT);
   const context = [`Date du jour : ${today()}`];
-  if (history.entries.length > 0 || history.planned) context.push(JSON.stringify(history));
+  if (history.entries.length > 0 || history.planned || history.activities) context.push(JSON.stringify(history));
   return messages.map((message, i) =>
     i === 0 ? { role: message.role, text: `${context.join('\n\n')}\n\nQuestion : ${message.text}` } : message,
   );

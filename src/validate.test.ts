@@ -319,7 +319,28 @@ describe('validateBackup', () => {
   it('relit une sauvegarde faite avant l’ajout du programme', () => {
     expect(validateBackup(backup)).toEqual({
       ok: true,
-      value: { wods: backup.wods, results: backup.results, plan: [] },
+      value: { wods: backup.wods, results: backup.results, plan: [], activities: [] },
+    });
+  });
+
+  it('relit les activités d’autres sports', () => {
+    const activities = [
+      { id: 'x1', date: '2026-10-10', sport: 'run', title: 'Footing', duration_sec: 3150, distance_m: 10200, rpe: 6 },
+      { id: 'x2', date: '2026-10-11', sport: 'other', title: 'Padel', duration_sec: 5400 },
+    ];
+    const checked = validateBackup({ ...backup, activities });
+    expect(checked.ok && checked.value.activities).toEqual(activities);
+    expect(validateBackup({ ...backup, activities: [{ id: 'x3', date: '2026-10-11', sport: 'other', duration_sec: 600 }] })).toEqual({
+      ok: false,
+      errors: ['activities[0].title : champ manquant : quel sport ?'],
+    });
+    expect(validateBackup({ ...backup, activities: [{ id: 'x4', date: '2026-10-11', sport: 'ski', duration_sec: 0, rpe: 12 }] })).toEqual({
+      ok: false,
+      errors: [
+        'activities[0].sport : doit valoir "run", "bike", "swim", "row", "walk", "other"',
+        'activities[0].duration_sec : doit être un entier ≥ 1',
+        'activities[0].rpe : doit être compris entre 1 et 10',
+      ],
     });
   });
 

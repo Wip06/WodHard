@@ -3,7 +3,7 @@ import type { Movement, Score, Wod, WodType } from './types';
 const TYPE_LABELS: Record<WodType, string> = { amrap: 'AMRAP', emom: 'EMOM', for_time: 'For Time', hyrox: 'Hyrox' };
 
 const pad = (n: number) => String(n).padStart(2, '0');
-const decimal = (n: number) => n.toLocaleString('fr-FR', { maximumFractionDigits: 2 });
+export const decimal = (n: number, digits = 2) => n.toLocaleString('fr-FR', { maximumFractionDigits: digits });
 
 export const typeLabel = (type: WodType) => TYPE_LABELS[type];
 export const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`;

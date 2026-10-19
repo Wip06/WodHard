@@ -4,6 +4,8 @@ import {
   addWod,
   applyBackup,
   backupStatus,
+  buildHistory,
+  deleteActivity,
   deleteResult,
   getWods,
   pendingDates,
@@ -13,6 +15,7 @@ import {
   removePlanEntries,
   removeWods,
   reschedulePlan,
+  saveActivity,
   saveResult,
   visiblePlan,
 } from './store';
@@ -32,7 +35,7 @@ const entryOf = (title: string) => visiblePlan().find((row) => row.saved.wod.tit
 
 beforeEach(() => {
   memory.clear();
-  applyBackup({ wods: [], results: [], plan: [] }, 'replace');
+  applyBackup({ wods: [], results: [], plan: [], activities: [] }, 'replace');
   // Dates loin dans le futur : tout reste visible dans le programme.
   addProgram([
     { date: '2099-01-05', wod: wod('A') },
@@ -106,6 +109,7 @@ describe('noms des mouvements', () => {
         wods: [{ id: 'old', added_at: '2026-10-01T10:00:00.000Z', wod: { ...wod('Ancien'), movements: [{ name: 'Ring row', reps: 10 }] } }],
         results: [],
         plan: [],
+        activities: [],
       },
       'replace',
     );
@@ -115,7 +119,7 @@ describe('noms des mouvements', () => {
   });
 
   it('reconnaît comme doublon un WOD enregistré avec d’anciens noms', () => {
-    applyBackup({ wods: [{ id: 'old', added_at: '2026-10-01T10:00:00.000Z', wod: { ...wod('X'), movements: [{ name: 'burpees', reps: 10 }] } }], results: [], plan: [] }, 'replace');
+    applyBackup({ wods: [{ id: 'old', added_at: '2026-10-01T10:00:00.000Z', wod: { ...wod('X'), movements: [{ name: 'burpees', reps: 10 }] } }], results: [], plan: [], activities: [] }, 'replace');
     expect(addWod({ ...wod('X'), movements: [{ name: 'Burpee', reps: 10 }] })).toMatchObject({ duplicate: true, saved: { id: 'old' } });
   });
 });
@@ -132,5 +136,21 @@ describe('séances à sauvegarder', () => {
     expect(backupStatus().unsaved).toBe(1);
     deleteResult('r1');
     expect(backupStatus().unsaved).toBe(0);
+  });
+});
+
+describe('activités d’autres sports', () => {
+  it('comptent comme des séances à sauvegarder et partent au coach sans leur identifiant', () => {
+    saveActivity({ id: 'x1', date: '2099-01-07', sport: 'run', duration_sec: 3000, distance_m: 10_000, rpe: 6 });
+    saveActivity({ id: 'x2', date: '2099-01-06', sport: 'bike', duration_sec: 5400 });
+    expect(backupStatus().unsaved).toBe(3);
+    expect(buildHistory(30).activities).toEqual([
+      { date: '2099-01-06', sport: 'bike', duration_sec: 5400 },
+      { date: '2099-01-07', sport: 'run', duration_sec: 3000, distance_m: 10_000, rpe: 6 },
+    ]);
+    expect(buildHistory(1).activities).toHaveLength(1);
+    deleteActivity('x1');
+    deleteActivity('x2');
+    expect(buildHistory(30).activities).toBeUndefined();
   });
 });

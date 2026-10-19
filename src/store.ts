@@ -3,7 +3,7 @@ import { addDays, mondayOf, today } from './format';
 import { knownNames, normalizeWod } from './movements';
 import { recordIds, workKey } from './records';
 import type { Clock } from './timer';
-import type { AppData, Backup, HistoryExport, PlanEntry, ProgramItem, Result, SavedWod, Wod } from './types';
+import type { Activity, AppData, Backup, HistoryExport, PlanEntry, ProgramItem, Result, SavedWod, Wod } from './types';
 import { isDate, isObj, validateBackup, validateWod } from './validate';
 
 export const DATA_KEY = 'wodhard:data';
@@ -47,7 +47,7 @@ export interface PlannedWod {
   done?: Result;
 }
 
-const emptyData = (): AppData => ({ wods: [], results: [], plan: [] });
+const emptyData = (): AppData => ({ wods: [], results: [], plan: [], activities: [] });
 
 let data: AppData = emptyData();
 let session: Session | null = null;
@@ -93,8 +93,10 @@ function saveData(): void {
 }
 
 export const getWods = (): readonly SavedWod[] => data.wods;
+export const getPlan = (): PlanEntry[] => [...data.plan];
 export const findWod = (id: string) => data.wods.find((saved) => saved.id === id);
 export const findResult = (id: string) => data.results.find((result) => result.id === id);
+export const findActivity = (id: string) => data.activities.find((activity) => activity.id === id);
 
 /** Orthographes déjà utilisées dans l'appli, reprises pour les noms qui n'ont pas de nom retenu. */
 const known = () => knownNames([...data.wods.map((saved) => saved.wod), ...data.results.map((result) => result.wod)]);
@@ -315,16 +317,44 @@ export function saveResult(result: Result): void {
   if (index !== -1) {
     data.results[index] = result;
   } else {
-    // Compteur lu avant l'ajout : sans compteur, il part du nombre de séances déjà là.
-    const unsaved = readUnsaved();
+    countUnsaved();
     data.results.push(result);
-    write(UNSAVED_KEY, JSON.stringify({ count: unsaved.count + 1, since: unsaved.since ?? today() }));
     // Une nouvelle séance coche la plus ancienne date encore prévue pour ce WOD.
     const pending = data.plan
       .filter((entry) => entry.wod_id === result.wod_id && entry.result_id === undefined)
       .sort(byDate)[0];
     if (pending) pending.result_id = result.id;
   }
+  saveData();
+}
+
+/** Une séance de plus hors de toute sauvegarde. Compteur lu avant l'ajout : sans compteur, il part des séances déjà là. */
+function countUnsaved(): void {
+  const unsaved = readUnsaved();
+  write(UNSAVED_KEY, JSON.stringify({ count: unsaved.count + 1, since: unsaved.since ?? today() }));
+}
+
+/** Activités d'autres sports, de la plus récente à la plus ancienne. */
+export function sortedActivities(): Activity[] {
+  return data.activities
+    .map((activity, index) => ({ activity, index }))
+    .sort((a, b) => b.activity.date.localeCompare(a.activity.date) || b.index - a.index)
+    .map(({ activity }) => activity);
+}
+
+/** Ajoute l'activité, ou la remplace si son identifiant existe déjà. */
+export function saveActivity(activity: Activity): void {
+  const index = data.activities.findIndex((existing) => existing.id === activity.id);
+  if (index !== -1) data.activities[index] = activity;
+  else {
+    countUnsaved();
+    data.activities.push(activity);
+  }
+  saveData();
+}
+
+export function deleteActivity(id: string): void {
+  data.activities = data.activities.filter((activity) => activity.id !== id);
   saveData();
 }
 
@@ -344,6 +374,8 @@ export function buildHistory(limit?: number): HistoryExport {
   };
   const planned = visiblePlan().filter((row) => !row.done);
   if (planned.length > 0) history.planned = planned.map(({ entry, saved }) => ({ date: entry.date, wod: saved.wod }));
+  const activities = sortedActivities().slice(0, limit).reverse();
+  if (activities.length > 0) history.activities = activities.map(({ id: _id, ...activity }) => activity);
   return history;
 }
 
@@ -367,6 +399,7 @@ export function applyBackup(incoming: AppData, mode: 'merge' | 'replace'): void 
           wods: mergeById(data.wods, incoming.wods),
           results: mergeById(data.results, incoming.results),
           plan: mergeById(data.plan, incoming.plan),
+          activities: mergeById(data.activities, incoming.activities),
         };
   saveData();
 }
@@ -379,6 +412,9 @@ export function markExported(): void {
 }
 
 /** Séances enregistrées depuis le dernier export, et date de la première d'entre elles. */
+/** Séances enregistrées : WOD faits et activités d'autres sports. */
+const sessionCount = () => data.results.length + data.activities.length;
+
 function readUnsaved(): { count: number; since: string | null } {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(UNSAVED_KEY) ?? 'null');
@@ -389,7 +425,7 @@ function readUnsaved(): { count: number; since: string | null } {
     // Compteur illisible : on repart du cas « jamais compté » ci-dessous.
   }
   // Avant l'existence de ce compteur : tout compte tant qu'aucun export n'a été fait.
-  return { count: lastExport() ? 0 : data.results.length, since: null };
+  return { count: lastExport() ? 0 : sessionCount(), since: null };
 }
 
 function clearUnsaved(): void {
@@ -402,7 +438,7 @@ export function backupStatus(): { unsaved: number; due: boolean } {
   const unsaved = readUnsaved();
   const { since } = unsaved;
   // Une séance supprimée ne compte plus : jamais plus de séances à sauvegarder qu'il n'en existe.
-  const count = Math.min(unsaved.count, data.results.length);
+  const count = Math.min(unsaved.count, sessionCount());
   const snoozedUntil = localStorage.getItem(SNOOZE_KEY);
   const old = since !== null && since <= addDays(today(), -BACKUP_MAX_DAYS);
   const snoozed = snoozedUntil !== null && today() < snoozedUntil;

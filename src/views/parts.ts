@@ -17,7 +17,8 @@ import {
 } from '../format';
 import { allMovements, isRest } from '../movements';
 import { isOverCap, splitDeltas, type Delta } from '../records';
-import type { Adjustment, Movement, Result, Wod } from '../types';
+import { activityLine, activityName } from '../sports';
+import type { Activity, Adjustment, Movement, Result, Wod } from '../types';
 
 export function pageHead(title: string, back?: { href: string; label: string }): HTMLElement {
   return h(
@@ -49,7 +50,7 @@ export function badges(wod: Wod): HTMLElement {
 }
 
 /** Ouvre la conversation avec le coach, le message déjà écrit, prêt à être envoyé. */
-function openChat(draft: string): void {
+export function openChat(draft: string): void {
   try {
     sessionStorage.setItem(CHAT_DRAFT_KEY, draft);
   } catch {
@@ -286,6 +287,26 @@ export function adviceRequest(result: Result): string {
 }
 
 export const askAdvice = (result: Result) => openChat(adviceRequest(result));
+
+/** Ligne d'une activité d'un autre sport, au même format qu'une séance de WOD. */
+export function activityRow(activity: Activity): HTMLElement {
+  return h(
+    'li',
+    null,
+    h(
+      'a',
+      { class: 'card result', href: `#/activity/${activity.id}` },
+      h('span', { class: 'card-top' }, h('span', { class: 'date' }, dateLabel(activity.date)), h('span', { class: 'badge sport' }, activityName(activity))),
+      activity.title && activity.sport !== 'other' && h('strong', { class: 'card-title' }, activity.title),
+      h(
+        'span',
+        { class: 'result-line' },
+        h('span', { class: 'score' }, activityLine(activity)),
+        activity.rpe !== undefined && h('span', { class: 'chip' }, `RPE ${activity.rpe}`),
+      ),
+    ),
+  );
+}
 
 export function resultRow(result: Result, withTitle = true, record = false): HTMLElement {
   const { score } = result;
