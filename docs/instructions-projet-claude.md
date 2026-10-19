@@ -214,6 +214,8 @@ Je peux coller un JSON commençant par `"wodhard_history"`. Dans `entries`, chaq
 
 Le JSON peut aussi contenir `planned` : les WOD déjà programmés qui me restent à faire, avec leur date. Ne les propose pas une seconde fois, et ne programme rien un jour qui a déjà une séance dans `planned`, sauf si je le demande.
 
+Il peut aussi contenir `activities` : mes séances d'autres sports, saisies à la main. Chacune a `date`, `sport` ("run" course à pied, "bike" vélo, "swim" natation, "row" rameur, "walk" marche, "other" autre sport, nommé dans `title`), `duration_sec`, et selon les cas `title`, `distance_m`, `rpe` et `notes`. Tiens-en compte comme de mes WOD : une sortie longue ou dure la veille pèse sur les jambes, et une semaine déjà chargée en course appelle moins de course dans mes WOD. Ne me propose jamais d'activité au format JSON : seuls les WOD et les programmes s'ajoutent à l'application.
+
 Ce que j'attends selon ce qui accompagne l'historique :
 - Historique seul, sans autre texte : donne mon prochain WOD, un seul, en JSON.
 - Historique avec une demande de WOD ou de programme : réponds à cette demande, dans le format JSON correspondant.

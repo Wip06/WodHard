@@ -1,5 +1,6 @@
 import { allMovements } from './movements';
 import type {
+  Activity,
   Adjustment,
   AmrapScore,
   AmrapWod,
@@ -18,6 +19,7 @@ import type {
   Result,
   SavedWod,
   Score,
+  Sport,
   Wod,
 } from './types';
 
@@ -429,6 +431,42 @@ function checkPlanEntry(raw: unknown, path: string, errors: string[]): PlanEntry
   return compact<PlanEntry>({ id, date, wod_id, result_id });
 }
 
+export const SPORTS: Sport[] = ['run', 'bike', 'swim', 'row', 'walk', 'other'];
+const ACTIVITY_KEYS = ['id', 'date', 'sport', 'title', 'duration_sec', 'distance_m', 'rpe', 'notes'];
+
+function checkActivity(raw: unknown, path: string, errors: string[]): Activity | undefined {
+  if (!isObj(raw)) return fail(errors, path, 'doit être un objet');
+  const before = errors.length;
+  const at = (key: string) => join(path, key);
+  unknownKeys(raw, ACTIVITY_KEYS, path, errors);
+  const id = checkId(raw.id, at('id'), errors);
+  const date = isDate(raw.date) ? raw.date : fail(errors, at('date'), 'date attendue au format AAAA-MM-JJ');
+  const sport = SPORTS.find((name) => name === raw.sport);
+  if (!sport) fail(errors, at('sport'), `doit valoir ${SPORTS.map((name) => `"${name}"`).join(', ')}`);
+  const title =
+    raw.title !== undefined
+      ? checkText(raw.title, at('title'), errors, TITLE_MAX)
+      : sport === 'other'
+        ? fail(errors, at('title'), 'champ manquant : quel sport ?')
+        : undefined;
+  const duration_sec = checkNumber(raw.duration_sec, at('duration_sec'), errors, 'integer');
+  const distance_m = raw.distance_m === undefined ? undefined : checkNumber(raw.distance_m, at('distance_m'), errors, 'positive');
+  let rpe: number | undefined;
+  if (raw.rpe !== undefined) {
+    rpe = checkNumber(raw.rpe, at('rpe'), errors, 'integer');
+    if (rpe !== undefined && rpe > 10) rpe = fail(errors, at('rpe'), 'doit être compris entre 1 et 10');
+  }
+  const notes = optionalText(raw.notes, at('notes'), errors);
+  if (errors.length > before || id === undefined || date === undefined || !sport || duration_sec === undefined) return undefined;
+  return compact<Activity>({ id, date, sport, title, duration_sec, distance_m, rpe, notes });
+}
+
+/** Valide une activité saisie dans le formulaire. */
+export function validateActivity(raw: unknown): Validation<Activity> {
+  const errors: string[] = [];
+  return result(checkActivity(raw, '', errors), errors);
+}
+
 function checkProgramItem(raw: unknown, path: string, errors: string[]): ProgramItem | undefined {
   if (!isObj(raw)) return fail(errors, path, 'doit être un objet { "date": …, "wod": … }');
   const before = errors.length;
@@ -512,7 +550,10 @@ export function validateBackup(raw: unknown): Validation<AppData> {
   // `plan` est absent des sauvegardes faites avant l'ajout du programme.
   const rawPlan = raw.plan ?? [];
   if (!Array.isArray(rawPlan)) fail(errors, 'plan', 'doit être une liste');
-  if (!Array.isArray(raw.wods) || !Array.isArray(raw.results) || !Array.isArray(rawPlan)) {
+  // `activities` est absent des sauvegardes faites avant l'ajout des autres sports.
+  const rawActivities = raw.activities ?? [];
+  if (!Array.isArray(rawActivities)) fail(errors, 'activities', 'doit être une liste');
+  if (!Array.isArray(raw.wods) || !Array.isArray(raw.results) || !Array.isArray(rawPlan) || !Array.isArray(rawActivities)) {
     return { ok: false, errors };
   }
 
@@ -529,7 +570,8 @@ export function validateBackup(raw: unknown): Validation<AppData> {
       if (entry.result_id !== undefined && !resultIds.has(entry.result_id)) delete entry.result_id;
       return entry;
     });
-  return result({ wods, results, plan }, errors);
+  const activities = rawActivities.map((item, i) => checkActivity(item, `activities[${i}]`, errors)).filter(isDefined);
+  return result({ wods, results, plan, activities }, errors);
 }
 
 export function parseBackup(text: string): Validation<AppData> {

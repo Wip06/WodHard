@@ -9,6 +9,7 @@ import {
   getWods,
   lastExport,
   markExported,
+  sortedActivities,
   sortedResults,
 } from '../store';
 import { coachReady, loadCoach } from '../gemini';
@@ -122,7 +123,7 @@ export function dataView(): View {
     onchange: () => void importFile(),
   });
 
-  const sessions = sortedResults().length;
+  const sessions = sortedResults().length + sortedActivities().length;
   const limit = h(
     'select',
     { 'aria-label': 'Séances à copier' },
@@ -148,8 +149,10 @@ export function dataView(): View {
       { class: 'facts' },
       h('dt', null, 'WOD enregistrés'),
       h('dd', null, getWods().length),
-      h('dt', null, 'Séances'),
-      h('dd', null, sessions),
+      h('dt', null, 'Séances de WOD'),
+      h('dd', null, sortedResults().length),
+      h('dt', null, 'Autres sports'),
+      h('dd', null, sortedActivities().length),
       h('dt', null, 'Dernière sauvegarde'),
       h('dd', null, exported ? new Date(exported).toLocaleDateString('fr-FR', { dateStyle: 'long' }) : 'jamais'),
       h('dt', null, 'Séances non sauvegardées'),

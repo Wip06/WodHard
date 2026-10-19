@@ -2,12 +2,14 @@ import './style.css';
 import { toast } from './dom';
 import { render, startRouter, type View } from './router';
 import { DATA_KEY, getSession, loadData, loadSession } from './store';
+import { activityFormView, activityView } from './views/activity';
 import { chronoRunView, chronoView } from './views/chrono';
 import { chatView } from './views/chat';
 import { coachView } from './views/coach';
 import { dataView } from './views/data';
 import { editorView } from './views/editor';
 import { historyView, resultView } from './views/history';
+import { progressView } from './views/progress';
 import { scoreView } from './views/score';
 import { timerView } from './views/timer';
 import { addWodView, wodDetailView, wodListView } from './views/wods';
@@ -27,6 +29,10 @@ const routes: [RegExp, (...params: string[]) => View | null][] = [
   [/^\/history$/, historyView],
   [/^\/history\/([\w-]+)$/, resultView],
   [/^\/data$/, dataView],
+  [/^\/progress$/, progressView],
+  [/^\/activity\/new$/, () => activityFormView()],
+  [/^\/activity\/([\w-]+)\/edit$/, (id) => activityFormView(id)],
+  [/^\/activity\/([\w-]+)$/, activityView],
 ];
 
 function resolve(requested: string): View {

@@ -146,6 +146,21 @@ export interface PlanEntry {
   result_id?: string;
 }
 
+export type Sport = 'run' | 'bike' | 'swim' | 'row' | 'walk' | 'other';
+
+/** Une séance d'un autre sport, saisie à la main : sortie course, vélo, natation… */
+export interface Activity {
+  id: string;
+  date: string;
+  sport: Sport;
+  /** Précision libre (« Fractionné ») ; obligatoire pour « other » (« Padel »). */
+  title?: string;
+  duration_sec: number;
+  distance_m?: number;
+  rpe?: number;
+  notes?: string;
+}
+
 /** Un élément d'un programme collé : un WOD, éventuellement daté. */
 export interface ProgramItem {
   date?: string;
@@ -156,6 +171,7 @@ export interface AppData {
   wods: SavedWod[];
   results: Result[];
   plan: PlanEntry[];
+  activities: Activity[];
 }
 
 export interface Backup extends AppData {
@@ -169,4 +185,6 @@ export interface HistoryExport {
   entries: { date: string; wod: Wod; score: Score }[];
   /** WOD du programme qui restent à faire. */
   planned?: { date: string; wod: Wod }[];
+  /** Séances d'autres sports (course, vélo…), sans leur identifiant. */
+  activities?: Omit<Activity, 'id'>[];
 }
