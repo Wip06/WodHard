@@ -1,54 +1,31 @@
-import { choose, copyText, h, toast } from '../dom';
-import { dateLabel, plural, scoreLine } from '../format';
+import { choose, h, toast } from '../dom';
+import { dateLabel, scoreLine } from '../format';
 import { coachReady, loadCoach } from '../gemini';
 import { navigate, type View } from '../router';
 import { isOverCap, lastSplits, scoreDelta } from '../records';
-import { buildHistory, currentRecords, deleteResult, findResult, findWod, sameWorkout, sortedResults } from '../store';
+import { currentRecords, deleteResult, findResult, findWod, sameWorkout, sortedResults } from '../store';
 import { adjustmentText, askAdvice, deltaChip, pageHead, resultRow, splitsList, wodSheet } from './parts';
 
-const LIMITS = [
-  { value: '10', label: 'Les 10 dernières' },
-  { value: '30', label: 'Les 30 dernières' },
-  { value: 'all', label: 'Tout' },
-];
-const DEFAULT_LIMIT = '30';
-
+/**
+ * Toutes les séances, de la plus récente à la plus ancienne, depuis l'onglet Données. On y
+ * retrouve aussi celles d'un WOD supprimé de la bibliothèque.
+ */
 export function historyView(): View {
   const results = sortedResults();
   const records = currentRecords();
-  const limit = h(
-    'select',
-    { 'aria-label': 'Séances à copier' },
-    LIMITS.map(({ value, label }) => h('option', { value, selected: value === DEFAULT_LIMIT }, label)),
-  );
-
-  const copy = async () => {
-    const history = buildHistory(limit.value === 'all' ? undefined : Number(limit.value));
-    const copied = await copyText(JSON.stringify(history));
-    toast(copied ? `${plural(history.entries.length, 'séance')} dans le presse-papiers` : 'Copie impossible');
-  };
-
   const el = h(
     'section',
     { class: 'page' },
-    pageHead('Historique'),
+    pageHead('Toutes mes séances', { href: '#/data', label: 'Données' }),
     results.length > 0
-      ? [
-          h(
-            'div',
-            { class: 'stack' },
-            h('button', { class: 'btn primary block', onclick: () => void copy() }, 'Copier mon historique'),
-            h('label', { class: 'inline-field' }, h('span', null, 'Séances copiées, en JSON pour Claude :'), limit),
-          ),
-          h(
-            'ul',
-            { class: 'cards' },
-            results.map((result) => resultRow(result, true, records.has(result.id))),
-          ),
-        ]
-      : h('p', { class: 'empty' }, 'Aucune séance pour l’instant. Lance un WOD et saisis ton score : il apparaîtra ici.'),
+      ? h(
+          'ul',
+          { class: 'cards' },
+          results.map((result) => resultRow(result, true, records.has(result.id))),
+        )
+      : h('p', { class: 'empty' }, 'Aucune séance pour l’instant. Lance un WOD et saisis ton score : elle apparaîtra ici.'),
   );
-  return { el, tab: 'history' };
+  return { el, tab: 'data' };
 }
 
 export function resultView(id: string): View | null {
@@ -74,13 +51,14 @@ export function resultView(id: string): View | null {
     if (!confirmed) return;
     deleteResult(id);
     toast('Séance supprimée');
-    navigate('/history', true);
+    navigate(inLibrary ? `/wod/${result.wod_id}` : '/history', true);
   };
 
   const el = h(
     'section',
     { class: 'page' },
-    pageHead(dateLabel(result.date), { href: '#/history', label: 'Historique' }),
+    // Retour à la fiche du WOD ; sans elle (WOD supprimé), à la liste de toutes les séances.
+    pageHead(dateLabel(result.date), inLibrary ? { href: `#/wod/${result.wod_id}`, label: 'WOD' } : { href: '#/history', label: 'Mes séances' }),
     h(
       'div',
       { class: 'scoreboard' },
@@ -128,5 +106,5 @@ export function resultView(id: string): View | null {
       h('button', { class: 'btn ghost danger block', onclick: () => void remove() }, 'Supprimer cette séance'),
     ),
   );
-  return { el, tab: 'history' };
+  return { el, tab: 'wods' };
 }

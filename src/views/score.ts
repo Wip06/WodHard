@@ -438,9 +438,10 @@ export function scoreView(resultId?: string): View | null {
       const saved = findResult(id);
       const advice = saved && coachReady(loadCoach()) ? { label: 'Avis du coach', run: () => askAdvice(saved) } : undefined;
       toast(record ? 'Nouveau record !' : 'Séance enregistrée', advice);
-      navigate('/history', true);
-      // Un record prolonge la fête sur l'historique, jusqu'à ce que l'on en sorte.
-      if (record) celebrate(['/history']);
+      // La séance s'ouvre : score, comparaison avec la dernière fois, avis du coach.
+      navigate(`/history/${id}`, true);
+      // Un record prolonge la fête sur la séance, jusqu'à ce que l'on en sorte.
+      if (record) celebrate([`/history/${id}`]);
     }
   };
 
