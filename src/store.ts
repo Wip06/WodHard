@@ -315,8 +315,9 @@ export function saveResult(result: Result): void {
   if (index !== -1) {
     data.results[index] = result;
   } else {
-    data.results.push(result);
+    // Compteur lu avant l'ajout : sans compteur, il part du nombre de séances déjà là.
     const unsaved = readUnsaved();
+    data.results.push(result);
     write(UNSAVED_KEY, JSON.stringify({ count: unsaved.count + 1, since: unsaved.since ?? today() }));
     // Une nouvelle séance coche la plus ancienne date encore prévue pour ce WOD.
     const pending = data.plan
@@ -398,7 +399,10 @@ function clearUnsaved(): void {
 
 /** Nombre de séances absentes de toute sauvegarde, et s'il est temps de le rappeler. */
 export function backupStatus(): { unsaved: number; due: boolean } {
-  const { count, since } = readUnsaved();
+  const unsaved = readUnsaved();
+  const { since } = unsaved;
+  // Une séance supprimée ne compte plus : jamais plus de séances à sauvegarder qu'il n'en existe.
+  const count = Math.min(unsaved.count, data.results.length);
   const snoozedUntil = localStorage.getItem(SNOOZE_KEY);
   const old = since !== null && since <= addDays(today(), -BACKUP_MAX_DAYS);
   const snoozed = snoozedUntil !== null && today() < snoozedUntil;

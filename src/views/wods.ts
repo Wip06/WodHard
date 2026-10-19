@@ -516,7 +516,7 @@ export function wodListView(): View {
     if (ids.length === 0) return;
     const confirmed = await choose(
       `Supprimer ${ids.length} WOD de la bibliothèque ?`,
-      'Ils sont aussi retirés du programme. Les séances déjà faites restent dans l’historique.',
+      'Ils sont aussi retirés du programme. Les séances déjà faites sont conservées dans Données › Toutes mes séances.',
       [
         { label: 'Supprimer', value: true, kind: 'danger' },
         { label: 'Annuler', value: false },
@@ -685,7 +685,9 @@ export function wodDetailView(id: string): View | null {
   const remove = async () => {
     const message =
       past.length > 0
-        ? `Les ${past.length} séances déjà faites restent dans l’historique.`
+        ? past.length > 1
+          ? `Les ${past.length} séances déjà faites sont conservées dans Données › Toutes mes séances.`
+          : 'La séance déjà faite est conservée dans Données › Toutes mes séances.'
         : 'Ce WOD n’a pas encore été fait.';
     const confirmed = await choose(`Supprimer « ${wod.title} » ?`, message, [
       { label: 'Supprimer', value: true, kind: 'danger' },

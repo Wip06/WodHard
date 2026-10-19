@@ -3,6 +3,8 @@ import {
   addProgram,
   addWod,
   applyBackup,
+  backupStatus,
+  deleteResult,
   getWods,
   pendingDates,
   planWods,
@@ -115,5 +117,20 @@ describe('noms des mouvements', () => {
   it('reconnaît comme doublon un WOD enregistré avec d’anciens noms', () => {
     applyBackup({ wods: [{ id: 'old', added_at: '2026-10-01T10:00:00.000Z', wod: { ...wod('X'), movements: [{ name: 'burpees', reps: 10 }] } }], results: [], plan: [] }, 'replace');
     expect(addWod({ ...wod('X'), movements: [{ name: 'Burpee', reps: 10 }] })).toMatchObject({ duplicate: true, saved: { id: 'old' } });
+  });
+});
+
+describe('séances à sauvegarder', () => {
+  it('compte chaque nouvelle séance une seule fois, même sans compteur existant', () => {
+    memory.delete('wodhard:unsaved');
+    const a = entryOf('A');
+    saveResult({ id: 'r2', wod_id: a?.wod_id, date: '2099-01-05', wod: wod('A'), score: { rounds: 3, extra_reps: 0, rx: true } });
+    expect(backupStatus().unsaved).toBe(2);
+  });
+
+  it('ne compte plus une séance supprimée', () => {
+    expect(backupStatus().unsaved).toBe(1);
+    deleteResult('r1');
+    expect(backupStatus().unsaved).toBe(0);
   });
 });

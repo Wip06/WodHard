@@ -1,12 +1,27 @@
-import { choose, h, toast } from '../dom';
+import { choose, copyText, h, toast } from '../dom';
 import { plural, today } from '../format';
 import { render, type View } from '../router';
-import { applyBackup, backupStatus, buildBackup, getWods, lastExport, markExported, sortedResults } from '../store';
+import {
+  applyBackup,
+  backupStatus,
+  buildBackup,
+  buildHistory,
+  getWods,
+  lastExport,
+  markExported,
+  sortedResults,
+} from '../store';
 import { coachReady, loadCoach } from '../gemini';
 import { parseBackup } from '../validate';
 import { pageHead } from './parts';
 
 const MAX_ERRORS = 8;
+const LIMITS = [
+  { value: '10', label: 'Les 10 dernières' },
+  { value: '30', label: 'Les 30 dernières' },
+  { value: 'all', label: 'Tout' },
+];
+const DEFAULT_LIMIT = '30';
 
 function download(file: File): void {
   const url = URL.createObjectURL(file);
@@ -95,6 +110,18 @@ export function dataView(): View {
     onchange: () => void importFile(),
   });
 
+  const sessions = sortedResults().length;
+  const limit = h(
+    'select',
+    { 'aria-label': 'Séances à copier' },
+    LIMITS.map(({ value, label }) => h('option', { value, selected: value === DEFAULT_LIMIT }, label)),
+  );
+  const copy = async () => {
+    const history = buildHistory(limit.value === 'all' ? undefined : Number(limit.value));
+    const copied = await copyText(JSON.stringify(history));
+    toast(copied ? `${plural(history.entries.length, 'séance')} dans le presse-papiers` : 'Copie impossible');
+  };
+
   const el = h(
     'section',
     { class: 'page' },
@@ -110,7 +137,7 @@ export function dataView(): View {
       h('dt', null, 'WOD enregistrés'),
       h('dd', null, getWods().length),
       h('dt', null, 'Séances'),
-      h('dd', null, sortedResults().length),
+      h('dd', null, sessions),
       h('dt', null, 'Dernière sauvegarde'),
       h('dd', null, exported ? new Date(exported).toLocaleDateString('fr-FR', { dateStyle: 'long' }) : 'jamais'),
       h('dt', null, 'Séances non sauvegardées'),
@@ -119,6 +146,14 @@ export function dataView(): View {
       h('dd', null, persisted),
     ),
     installHint,
+    sessions > 0 &&
+      h(
+        'div',
+        { class: 'stack' },
+        h('a', { class: 'btn block', href: '#/history' }, `Toutes mes séances (${sessions})`),
+        h('button', { class: 'btn block', onclick: () => void copy() }, 'Copier mon historique pour Claude'),
+        h('label', { class: 'inline-field' }, h('span', null, 'Séances copiées, en JSON :'), limit),
+      ),
     h(
       'div',
       { class: 'stack' },

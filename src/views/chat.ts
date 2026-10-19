@@ -133,7 +133,7 @@ export function chatView(): View {
       h(
         'p',
         { class: 'hint left' },
-        'Tu passes par Claude ? Copie ton historique depuis l’onglet Historique, colle-le dans ton projet, puis rapporte sa réponse avec « Coller un WOD ».',
+        'Tu passes par Claude ? Copie ton historique depuis l’onglet Données, colle-le dans ton projet, puis rapporte sa réponse avec « Coller un WOD ».',
       ),
     );
     return { el, tab: 'wods' };
