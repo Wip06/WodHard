@@ -976,7 +976,7 @@ textarea {
 }
 
 .typing {
-  flex-direction: row;
+  display: flex;
   align-items: center;
   gap: 10px;
 }
@@ -986,15 +986,11 @@ textarea {
   font-size: 0.88rem;
 }
 
-/* Réponse affichée pendant qu'elle s'écrit. */
-.typing:has(.live:not([hidden])) {
+/* Réponse affichée pendant qu'elle s'écrit, avec le même espacement qu'une fois finie. */
+.live-body {
+  display: flex;
   flex-direction: column;
-  align-items: flex-start;
-}
-
-.typing .live {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  gap: 8px;
 }
 
 .dots {
@@ -1106,7 +1102,9 @@ textarea {
   background: color-mix(in srgb, var(--accent) 16%, var(--surface));
 }
 
+/* Largeur fixe : une réponse qui s'écrit ne fait pas grandir sa bulle mot après mot. */
 .msg.coach {
+  width: 85%;
   align-self: flex-start;
   border: 1px solid var(--line);
   border-bottom-left-radius: 4px;

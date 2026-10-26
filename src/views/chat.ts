@@ -1,4 +1,4 @@
-import { demoUrl, parseReply, proposesWod, type Block, type Inline } from '../chatText';
+import { demoUrl, parseReply, preview, proposesWod, type Block, type Inline } from '../chatText';
 import { choose, h, toast } from '../dom';
 import { today } from '../format';
 import {
@@ -95,11 +95,11 @@ function withContext(messages: ChatTurn[]): Turn[] {
   );
 }
 
-/** Aperçu de la réponse en cours d'écriture : le texte, sans le JSON d'une séance tant qu'il n'est pas fini. */
-function preview(text: string): string {
-  const fence = text.indexOf('```');
-  return fence === -1 ? text : `${text.slice(0, fence).trimEnd()}\n\nSéance en cours d’écriture…`;
-}
+/** Images pour rattraper le texte reçu : le réseau l'envoie par paquets, l'écran le révèle régulièrement. */
+const REVEAL_FRAMES = 6;
+/** Attente maximale, en fin de réponse, pour finir de révéler le texte avant d'afficher la bulle finale. */
+const SETTLE_MS = 1000;
+
 
 const renderLine = (parts: Inline[]) => parts.map((part) => (part.bold ? h('strong', null, part.text) : part.text));
 
@@ -111,14 +111,12 @@ function renderBlocks(blocks: Block[]): HTMLElement[] {
   );
 }
 
-/** Bulle du coach : texte mis en forme, liens de démonstration et bouton d'ajout d'une séance valide. */
-function coachBubble(text: string): HTMLElement {
+/** Contenu d'une bulle du coach : texte mis en forme, liens de démonstration et bouton d'ajout d'une séance valide. */
+function coachContent(text: string): (HTMLElement | false | null | undefined)[] {
   const { blocks, demos, proposal } = parseReply(text);
-  return h(
-    'div',
-    { class: 'msg coach' },
-    renderBlocks(blocks),
-    demos.map((name) =>
+  return [
+    ...renderBlocks(blocks),
+    ...demos.map((name) =>
       h('a', { class: 'demo', href: demoUrl(name), target: '_blank', rel: 'noopener' }, `▶ Démo vidéo : ${name}`),
     ),
     proposal?.ok &&
@@ -132,7 +130,77 @@ function coachBubble(text: string): HTMLElement {
     proposal &&
       !proposal.ok &&
       h('p', { class: 'note' }, 'L’appli ne peut pas lire la séance proposée : demande au coach de la corriger.'),
-  );
+  ];
+}
+
+const coachBubble = (text: string) => h('div', { class: 'msg coach' }, coachContent(text));
+
+/**
+ * Bulle du coach pendant qu'il écrit : trois points, puis le texte révélé à un rythme régulier, déjà
+ * mis en forme comme il le sera une fois fini. `onGrow` est appelé quand la bulle grandit.
+ */
+function writingBubble(onGrow: (bubble: HTMLElement) => void) {
+  const dots = h('span', { class: 'dots', 'aria-label': 'Le coach écrit' }, h('i'), h('i'), h('i'));
+  const note = h('span', { class: 'typing-note' });
+  const status = h('div', { class: 'typing' }, dots, note);
+  const body = h('div', { class: 'live-body', hidden: true });
+  const el = h('div', { class: 'msg coach writing', role: 'status' }, body, status);
+  let received = '';
+  let shown = 0;
+  let frame = 0;
+  let caughtUp: (() => void) | null = null;
+
+  const refresh = () => {
+    body.hidden = body.childElementCount === 0;
+    dots.hidden = !body.hidden;
+    status.hidden = dots.hidden && note.textContent === '';
+  };
+  const paint = () => {
+    frame = 0;
+    const backlog = received.length - shown;
+    if (backlog > 0) {
+      // Plus le retard est grand, plus la révélation accélère : elle ne traîne jamais derrière le coach.
+      shown += Math.max(1, Math.ceil(backlog / REVEAL_FRAMES));
+      body.replaceChildren(...coachContent(preview(received.slice(0, shown))).filter((node) => node instanceof HTMLElement));
+      refresh();
+      onGrow(el);
+    }
+    if (shown < received.length) frame = requestAnimationFrame(paint);
+    else {
+      caughtUp?.();
+      caughtUp = null;
+    }
+  };
+
+  return {
+    el,
+    show(text: string): void {
+      received = text;
+      if (!frame) frame = requestAnimationFrame(paint);
+    },
+    /** Repart de zéro, avec un message d'attente (le coach corrige sa séance). */
+    restart(message: string): void {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      received = '';
+      shown = 0;
+      body.replaceChildren();
+      note.textContent = message;
+      refresh();
+    },
+    /** Attend que tout le texte reçu soit à l'écran. */
+    settle(): Promise<void> {
+      if (shown >= received.length) return Promise.resolve();
+      return new Promise((resolve) => {
+        caughtUp = resolve;
+        window.setTimeout(resolve, SETTLE_MS);
+      });
+    },
+    stop(): void {
+      cancelAnimationFrame(frame);
+      frame = 0;
+    },
+  };
 }
 
 const WELCOME = [
@@ -168,55 +236,33 @@ export function chatView(): View {
   const errorBox = h('div', { class: 'errors chat-error', role: 'alert', hidden: true });
   const input = h('textarea', { rows: 1, 'aria-label': 'Ton message', placeholder: 'Écris au coach…' });
   const sendBtn = h('button', { type: 'submit', class: 'send', 'aria-label': 'Envoyer' }, '↑');
-  const typingNote = h('span', { class: 'typing-note' });
-  const dots = h('span', { class: 'dots', 'aria-label': 'Le coach écrit' }, h('i'), h('i'), h('i'));
-  const live = h('p', { class: 'live', hidden: true });
-  const typing = h('div', { class: 'msg coach typing', role: 'status' }, dots, live, typingNote);
-  /** Affiche la réponse au fil de l'eau, une fois par image au plus. */
-  let pending: string | null = null;
-  const showLive = (text: string) => {
-    if (pending === null) {
-      requestAnimationFrame(() => {
-        live.textContent = preview(pending ?? '');
-        live.hidden = live.textContent === '';
-        dots.hidden = !live.hidden;
-        pending = null;
-        scrollToEnd();
-      });
-    }
-    pending = text;
-  };
-  const resetLive = () => {
-    pending = null;
-    live.textContent = '';
-    live.hidden = true;
-    dots.hidden = false;
-  };
-
   const scrollToEnd = () => window.scrollTo({ top: document.documentElement.scrollHeight });
+  /** Suit la réponse tant que son début reste à l'écran ; au-delà, elle se lit à son rythme, sans saut. */
+  const follow = (bubble: HTMLElement) => {
+    const header = document.querySelector('.chat-head')?.getBoundingClientRect().bottom ?? 0;
+    if (bubble.getBoundingClientRect().top > header + 12) scrollToEnd();
+  };
   const grow = () => {
     input.style.height = 'auto';
     input.style.height = `${Math.min(input.scrollHeight, INPUT_MAX_HEIGHT)}px`;
   };
 
-  function renderThread(waiting = false): void {
+  const userBubble = (text: string) => h('div', { class: 'msg user' }, h('p', null, text));
+
+  function renderThread(): void {
     thread.replaceChildren(
       ...(messages.length > 0 ? [] : [coachBubble(WELCOME)]),
-      ...messages.map((message) =>
-        message.role === 'user' ? h('div', { class: 'msg user' }, h('p', null, message.text)) : coachBubble(message.text),
-      ),
-      ...(waiting ? [typing] : []),
+      ...messages.map((message) => (message.role === 'user' ? userBubble(message.text) : coachBubble(message.text))),
     );
   }
 
   /** Une réponse qui propose un WOD illisible par l'appli est renvoyée une fois au coach pour correction. */
-  async function answer(turns: Turn[]): Promise<string> {
-    const options = { extra: COACH_FORMAT, onText: showLive };
+  async function answer(turns: Turn[], writing: ReturnType<typeof writingBubble>): Promise<string> {
+    const options = { extra: COACH_FORMAT, onText: (text: string) => writing.show(text) };
     const first = await generate(coach, turns, options);
     const proposed = proposesWod(first) ? parseImport(first) : null;
     if (!proposed || proposed.ok) return first;
-    resetLive();
-    typingNote.textContent = 'Séance refusée par l’appli : le coach la corrige…';
+    writing.restart('Séance refusée par l’appli : le coach la corrige…');
     const correction: Turn[] = [...turns, { role: 'model', text: first }, { role: 'user', text: correctionRequest(proposed.errors) }];
     return generate(coach, correction, options);
   }
@@ -226,31 +272,41 @@ export function chatView(): View {
     if (text === '') return toast('Écris d’abord ton message');
     if (sendBtn.disabled) return;
     // Le contexte est fixé au premier message : la suite de la conversation ne le reconstruit pas.
-    const turn: ChatTurn = messages.length === 0 ? { role: 'user', text, context: currentContext() } : { role: 'user', text };
+    const starting = messages.length === 0;
+    const turn: ChatTurn = starting ? { role: 'user', text, context: currentContext() } : { role: 'user', text };
     messages = trim([...messages, turn]);
     input.value = '';
     grow();
     errorBox.hidden = true;
     sendBtn.disabled = true;
-    typingNote.textContent = '';
-    resetLive();
-    renderThread(true);
+    // Les bulles s'ajoutent à la suite : rien de ce qui est déjà affiché n'est redessiné.
+    if (starting) thread.replaceChildren();
+    const asked = userBubble(text);
+    const writing = writingBubble(follow);
+    thread.append(asked, writing.el);
     scrollToEnd();
     try {
-      const reply = await answer(withContext(messages));
+      const reply = await answer(withContext(messages), writing);
+      await writing.settle();
+      const bubble = coachBubble(reply);
+      writing.el.replaceWith(bubble);
+      follow(bubble);
       messages = [...messages, { role: 'model', text: reply }];
       saveChat(messages);
     } catch (error) {
       // Le message n'a pas eu de réponse : il revient dans le champ, prêt à être renvoyé.
+      writing.stop();
+      asked.remove();
+      writing.el.remove();
       messages = messages.slice(0, -1);
+      if (messages.length === 0) renderThread();
       input.value = text;
       grow();
       errorBox.textContent = error instanceof CoachError ? error.message : 'Erreur inattendue : réessaie.';
       errorBox.hidden = false;
+      scrollToEnd();
     } finally {
       sendBtn.disabled = false;
-      renderThread();
-      scrollToEnd();
     }
   }
 

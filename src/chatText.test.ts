@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { demoUrl, inline, parseReply } from './chatText';
+import { demoUrl, inline, parseReply, preview } from './chatText';
 
 describe('réponses du coach', () => {
   it('découpe paragraphes, listes à puces et listes numérotées', () => {
@@ -35,5 +35,24 @@ describe('réponses du coach', () => {
       { text: 'b', bold: true },
       { text: ' c', bold: false },
     ]);
+  });
+});
+
+describe('aperçu d’une réponse en cours d’écriture', () => {
+  it('cache le JSON d’une séance tant qu’il s’écrit', () => {
+    expect(preview('Voici ta séance.\n\n```json\n{"schema_ver')).toBe('Voici ta séance.\n\nSéance en cours d’écriture…');
+  });
+
+  it('referme d’avance un gras commencé, et attend un gras encore vide', () => {
+    expect(preview('Pour le **wall')).toBe('Pour le **wall**');
+    expect(preview('Pour le **')).toBe('Pour le ');
+    expect(preview('Pour le *')).toBe('Pour le ');
+    expect(preview('Le **wall ball**')).toBe('Le **wall ball**');
+  });
+
+  it('attend la suite d’une puce ou d’une liste numérotée', () => {
+    expect(preview('Garde :\n-')).toBe('Garde :\n');
+    expect(preview('Étapes :\n2.')).toBe('Étapes :\n');
+    expect(preview('Garde :\n- le dos')).toBe('Garde :\n- le dos');
   });
 });

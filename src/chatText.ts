@@ -67,3 +67,20 @@ export function parseReply(text: string): CoachReply {
 /** Recherche de vidéos de démonstration : de vrais gestes plutôt qu'une image générée, souvent fausse. */
 export const demoUrl = (movement: string) =>
   `https://www.youtube.com/results?search_query=${encodeURIComponent(`${movement} technique`)}`;
+
+const boldMarks = (text: string) => (text.match(/\*\*/g) ?? []).length;
+
+/**
+ * Aperçu de la réponse en cours d'écriture, mis en forme comme elle le sera une fois finie, pour que
+ * rien ne change d'aspect à l'arrivée du caractère suivant :
+ * - le JSON d'une séance est remplacé par une ligne d'attente ;
+ * - un début de puce (« - », « 1. ») ou un astérisque isolé en fin de texte attend la suite ;
+ * - un gras ouvert sans texte attend, un gras ouvert avec du texte est refermé d'avance.
+ */
+export function preview(text: string): string {
+  const fence = text.indexOf('```');
+  let prose = fence === -1 ? text : `${text.slice(0, fence).trimEnd()}\n\nSéance en cours d’écriture…`;
+  prose = prose.replace(/(^|\n)[ \t]*(?:[-*•]|\d+[.)]?)$/, '$1').replace(/(?<!\*)\*$/, '');
+  if (prose.endsWith('**') && boldMarks(prose) % 2 === 1) prose = prose.slice(0, -2);
+  return boldMarks(prose) % 2 === 1 ? `${prose}**` : prose;
+}
