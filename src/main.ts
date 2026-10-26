@@ -4,7 +4,7 @@ import { render, startRouter, type View } from './router';
 import { DATA_KEY, getSession, loadData, loadSession } from './store';
 import { activityFormView, activityView } from './views/activity';
 import { chronoRunView, chronoView } from './views/chrono';
-import { chatView } from './views/chat';
+import { chatView, proposalView } from './views/chat';
 import { coachView } from './views/coach';
 import { dataView } from './views/data';
 import { editorView } from './views/editor';
@@ -18,6 +18,7 @@ const routes: [RegExp, (...params: string[]) => View | null][] = [
   [/^\/$/, wodListView],
   [/^\/add$/, addWodView],
   [/^\/ask$/, chatView],
+  [/^\/ask\/proposal\/([\w-]+)$/, proposalView],
   [/^\/chrono$/, chronoView],
   [/^\/chrono\/run$/, chronoRunView],
   [/^\/coach$/, coachView],

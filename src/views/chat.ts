@@ -1,6 +1,6 @@
 import { demoUrl, parseReply, preview, proposesWod, type Block, type Inline } from '../chatText';
 import { choose, h, toast } from '../dom';
-import { today } from '../format';
+import { dayLabel, today, wodHeadline, wodSummary } from '../format';
 import {
   CHAT_DRAFT_KEY,
   COACH_FORMAT,
@@ -12,11 +12,11 @@ import {
   modelLabel,
   type Turn,
 } from '../claude';
-import type { View } from '../router';
-import { buildHistory } from '../store';
-import { isObj, parseImport } from '../validate';
-import { pageHead } from './parts';
-import { saveImport } from './wods';
+import { navigate, type View } from '../router';
+import { addProgram, addWod, buildHistory, findWod, newId } from '../store';
+import type { ProgramItem } from '../types';
+import { isObj, parseImport, type Import } from '../validate';
+import { badges, pageHead, wodSheet } from './parts';
 
 const CHAT_KEY = 'wodhard:coach-chat';
 const HISTORY_LIMIT = 30;
@@ -33,6 +33,12 @@ const INPUT_MAX_HEIGHT = 140;
  */
 interface ChatTurn extends Turn {
   context?: string;
+  /** Identifiant d'une réponse du coach, pour consulter la séance qu'elle propose. */
+  id?: string;
+  /** Choix fait sur la séance proposée, une fois consultée : ajoutée à mes WOD, ou non. */
+  decision?: 'added' | 'declined';
+  /** WOD enregistré depuis la proposition, pour l'ouvrir depuis la conversation. */
+  savedId?: string;
 }
 
 /** Conversation en cours, gardée sur cet appareil pour la retrouver en revenant sur l'écran. */
@@ -40,12 +46,27 @@ function loadChat(): ChatTurn[] {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(CHAT_KEY) ?? '[]');
     if (!Array.isArray(raw)) return [];
-    return raw
+    let named = false;
+    const messages = raw
       .filter(
         (message): message is ChatTurn =>
           isObj(message) && (message.role === 'user' || message.role === 'model') && typeof message.text === 'string',
       )
-      .map(({ role, text, context }) => (typeof context === 'string' ? { role, text, context } : { role, text }));
+      .map((message) => {
+        const turn: ChatTurn = { role: message.role, text: message.text };
+        if (typeof message.context === 'string') turn.context = message.context;
+        if (typeof message.id === 'string') turn.id = message.id;
+        else if (message.role === 'model') {
+          // Réponse enregistrée avant les identifiants : elle en reçoit un, gardé pour la suite.
+          turn.id = newId();
+          named = true;
+        }
+        if (message.decision === 'added' || message.decision === 'declined') turn.decision = message.decision;
+        if (typeof message.savedId === 'string') turn.savedId = message.savedId;
+        return turn;
+      });
+    if (named) saveChat(messages);
+    return messages;
   } catch {
     return [];
   }
@@ -134,29 +155,153 @@ function renderBlocks(blocks: Block[]): HTMLElement[] {
   );
 }
 
-/** Contenu d'une bulle du coach : texte mis en forme, liens de démonstration et bouton d'ajout d'une séance valide. */
-function coachContent(text: string): (HTMLElement | false | null | undefined)[] {
+/** « lun. 19 oct. → ven. 23 oct. », ou « sans date » pour un programme à planifier soi-même. */
+function programSpan(items: ProgramItem[]): string {
+  const dates = items.flatMap((item) => (item.date ? [item.date] : [])).sort();
+  const [first] = dates;
+  const last = dates.at(-1);
+  if (!first || !last) return 'Sans date';
+  return first === last ? dayLabel(first) : `${dayLabel(first)} → ${dayLabel(last)}`;
+}
+
+/** WOD enregistré depuis cette réponse, s'il est toujours dans la bibliothèque. */
+const savedWod = (message: ChatTurn) => (message.savedId ? findWod(message.savedId) : undefined);
+
+/**
+ * Carte d'une séance proposée par le coach : on la consulte avant de choisir de l'ajouter ou non,
+ * et le choix reste affiché ensuite.
+ */
+function proposalCard(message: ChatTurn, proposal: Import): HTMLElement {
+  const head =
+    proposal.kind === 'wod'
+      ? [
+          h('span', { class: 'card-top' }, badges(proposal.wod)),
+          h('strong', { class: 'card-title' }, proposal.wod.title),
+          h('span', { class: 'card-sub' }, wodSummary(proposal.wod)),
+        ]
+      : [
+          h('span', { class: 'card-top' }, h('span', { class: 'badge program' }, 'Programme')),
+          h('strong', { class: 'card-title' }, `${proposal.items.length} WOD`),
+          h('span', { class: 'card-sub' }, programSpan(proposal.items)),
+        ];
+  const preview = `#/ask/proposal/${message.id ?? ''}`;
+  const saved = savedWod(message);
+  const added = message.decision === 'added';
+  return h(
+    'div',
+    { class: 'proposal' },
+    head,
+    added && h('p', { class: 'proposal-status added' }, '✓ Ajouté à tes WOD à faire'),
+    message.decision === 'declined' && h('p', { class: 'proposal-status' }, 'Pas ajouté'),
+    added
+      ? h('a', { class: 'btn block', href: saved ? `#/wod/${saved.id}` : '#/' }, saved ? 'Ouvrir dans mes WOD' : 'Voir mes WOD')
+      : h('a', { class: `btn block ${message.decision ? '' : 'primary'}`, href: preview }, message.decision ? 'Revoir' : proposal.kind === 'wod' ? 'Voir la séance' : 'Voir le programme'),
+  );
+}
+
+/**
+ * Contenu d'une bulle du coach : texte mis en forme, liens de démonstration et, pour une réponse
+ * enregistrée (`message`), la carte de la séance qu'elle propose.
+ */
+function coachContent(text: string, message?: ChatTurn): (HTMLElement | false | null | undefined)[] {
   const { blocks, demos, proposal } = parseReply(text);
   return [
     ...renderBlocks(blocks),
     ...demos.map((name) =>
       h('a', { class: 'demo', href: demoUrl(name), target: '_blank', rel: 'noopener' }, `▶ Démo vidéo : ${name}`),
     ),
-    proposal?.ok &&
-      h(
-        'button',
-        { class: 'btn primary block', onclick: () => saveImport(proposal.value) },
-        proposal.value.kind === 'wod'
-          ? `Ajouter « ${proposal.value.wod.title} » à mes WOD`
-          : `Ajouter ce programme (${proposal.value.items.length} WOD)`,
-      ),
+    proposal?.ok && message?.id !== undefined && proposalCard(message, proposal.value),
     proposal &&
       !proposal.ok &&
       h('p', { class: 'note' }, 'L’appli ne peut pas lire la séance proposée : demande au coach de la corriger.'),
   ];
 }
 
-const coachBubble = (text: string) => h('div', { class: 'msg coach' }, coachContent(text));
+const coachBubble = (message: ChatTurn | string) =>
+  typeof message === 'string'
+    ? h('div', { class: 'msg coach' }, coachContent(message))
+    : h('div', { class: 'msg coach' }, coachContent(message.text, message));
+
+/** Programme proposé : chaque WOD avec sa date, à déplier pour le consulter en entier. */
+function programList(items: ProgramItem[]): HTMLElement {
+  return h(
+    'ol',
+    { class: 'program-list' },
+    items.map((item, i) =>
+      h(
+        'li',
+        null,
+        h(
+          'details',
+          { class: 'program-item', open: i === 0 },
+          h(
+            'summary',
+            null,
+            h('span', { class: 'day' }, item.date ? dayLabel(item.date) : `WOD ${i + 1}`),
+            h('strong', { class: 'card-title' }, item.wod.title),
+            h('span', { class: 'card-sub' }, wodHeadline(item.wod)),
+          ),
+          wodSheet(item.wod),
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * Séance ou programme proposé par le coach, à consulter en entier avant de choisir : l'ajouter à
+ * mes WOD à faire, ou non. Le choix est noté sur la réponse, et peut être revu.
+ */
+export function proposalView(id: string): View | null {
+  const messages = loadChat();
+  const index = messages.findIndex((message) => message.id === id);
+  const message = messages[index];
+  if (!message) return null;
+  const { proposal } = parseReply(message.text);
+  if (!proposal?.ok) return null;
+  const value = proposal.value;
+
+  const decide = (decision: 'added' | 'declined', savedId?: string) => {
+    messages[index] = { ...message, decision, ...(savedId && { savedId }) };
+    saveChat(messages);
+    navigate('/ask', true);
+  };
+  const add = () => {
+    if (value.kind === 'wod') return decide('added', addWod(value.wod).saved.id);
+    addProgram(value.items);
+    decide('added');
+  };
+
+  // Déjà ajouté (et toujours là) : on ouvre le WOD plutôt que de l'ajouter une seconde fois.
+  const saved = savedWod(message);
+  const alreadyAdded = message.decision === 'added' && (value.kind === 'program' || saved !== undefined);
+  const count = value.kind === 'program' ? value.items.length : 1;
+  const el = h(
+    'section',
+    { class: 'page' },
+    pageHead(value.kind === 'wod' ? 'Séance proposée' : 'Programme proposé', { href: '#/ask', label: 'Coach' }),
+    value.kind === 'wod' ? wodSheet(value.wod) : [h('p', { class: 'lead' }, programSpan(value.items)), programList(value.items)],
+    h(
+      'div',
+      { class: 'stack' },
+      alreadyAdded
+        ? [
+            h('p', { class: 'proposal-status added' }, '✓ Déjà ajouté à tes WOD à faire'),
+            h('a', { class: 'btn primary big block', href: saved ? `#/wod/${saved.id}` : '#/' }, saved ? 'Ouvrir dans mes WOD' : 'Voir mes WOD'),
+          ]
+        : [
+            h(
+              'button',
+              { class: 'btn primary big block', onclick: add },
+              value.kind === 'wod' ? 'Ajouter à mes WOD à faire' : `Ajouter les ${count} WOD à mes WOD à faire`,
+            ),
+            h('button', { class: 'btn ghost block', onclick: () => decide('declined') }, 'Ne pas l’ajouter'),
+          ],
+      h('a', { class: 'btn ghost block', href: '#/ask' }, 'Retour à la conversation'),
+    ),
+  );
+  return { el };
+}
 
 /**
  * Bulle du coach pendant qu'il écrit : trois points, puis le texte révélé mot par mot à un rythme
@@ -313,7 +458,7 @@ export function chatView(): View {
   function renderThread(): void {
     thread.replaceChildren(
       ...(messages.length > 0 ? [] : [coachBubble(WELCOME)]),
-      ...messages.map((message) => (message.role === 'user' ? userBubble(message.text) : coachBubble(message.text))),
+      ...messages.map((message) => (message.role === 'user' ? userBubble(message.text) : coachBubble(message))),
     );
   }
 
@@ -353,8 +498,9 @@ export function chatView(): View {
     try {
       const reply = await answer(withContext(messages), writing);
       await writing.settle(reply);
-      writing.el.replaceWith(coachBubble(reply));
-      messages = [...messages, { role: 'model', text: reply }];
+      const message: ChatTurn = { role: 'model', text: reply, id: newId() };
+      writing.el.replaceWith(coachBubble(message));
+      messages = [...messages, message];
       saveChat(messages);
     } catch (error) {
       // Le message n'a pas eu de réponse : il revient dans le champ, prêt à être renvoyé.

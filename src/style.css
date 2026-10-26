@@ -986,6 +986,63 @@ textarea {
   font-size: 0.88rem;
 }
 
+/* Séance proposée par le coach, à consulter avant de l'ajouter. */
+.proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.proposal .btn {
+  margin-top: 4px;
+}
+
+/* Le titre garde la couleur des cartes, pas celle du gras des bulles du coach. */
+.proposal .card-title {
+  color: var(--text);
+}
+
+.proposal-status {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.proposal-status.added {
+  color: var(--good);
+}
+
+.badge.program {
+  --tone: var(--accent);
+}
+
+.program-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.program-item {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.program-item > summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.program-item[open] > summary {
+  margin-bottom: 12px;
+}
+
 /* Réponse du coach et place réservée en dessous, pour qu'elle s'écrive sans faire défiler l'écran. */
 .turn {
   display: flex;
