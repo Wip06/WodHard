@@ -1,7 +1,7 @@
 import { choose, h, toast } from '../dom';
 import { celebrate } from '../fireworks';
 import { clock, movementText, today, wodSummary } from '../format';
-import { coachReady, loadCoach } from '../gemini';
+import { coachReady, loadCoach } from '../claude';
 import { allMovements, isRest } from '../movements';
 import { lastSplits, repsInRounds } from '../records';
 import { navigate, type View } from '../router';

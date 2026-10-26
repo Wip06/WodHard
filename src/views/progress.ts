@@ -1,6 +1,6 @@
 import { h } from '../dom';
 import { clock, dateLabel, decimal, duration, plural, scoreLine, today } from '../format';
-import { coachReady, loadCoach } from '../gemini';
+import { coachReady, loadCoach } from '../claude';
 import { render, type View } from '../router';
 import { distanceText, SPORT_INFO } from '../sports';
 import { dashboard, DEFAULT_RPE, STREAK_MIN, type Dashboard, type Family } from '../stats';

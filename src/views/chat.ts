@@ -4,13 +4,14 @@ import { today } from '../format';
 import {
   CHAT_DRAFT_KEY,
   COACH_FORMAT,
+  CoachError,
   coachReady,
   correctionRequest,
   generate,
-  GeminiError,
   loadCoach,
+  modelLabel,
   type Turn,
-} from '../gemini';
+} from '../claude';
 import type { View } from '../router';
 import { buildHistory } from '../store';
 import { isObj, parseImport } from '../validate';
@@ -21,26 +22,36 @@ const CHAT_KEY = 'wodhard:coach-chat';
 const HISTORY_LIMIT = 30;
 /** Messages gardés : au-delà, les plus anciens sont oubliés, pour que les demandes restent courtes. */
 const MAX_MESSAGES = 20;
-/** Réponse en texte, avec le rôle du coach et le format des WOD fournis par l'appli. */
-const CHAT_OPTIONS = { json: false, extra: COACH_FORMAT };
+
 /** Hauteur maximale du champ de saisie avant qu'il ne défile, en pixels. */
 const INPUT_MAX_HEIGHT = 140;
 
+/**
+ * Un message de la conversation. Le premier message de l'athlète garde le contexte (date du jour et
+ * historique) tel qu'il était au début : la conversation envoyée ne change alors qu'en s'allongeant,
+ * et son début est relu depuis le cache à chaque message.
+ */
+interface ChatTurn extends Turn {
+  context?: string;
+}
+
 /** Conversation en cours, gardée sur cet appareil pour la retrouver en revenant sur l'écran. */
-function loadChat(): Turn[] {
+function loadChat(): ChatTurn[] {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(CHAT_KEY) ?? '[]');
     if (!Array.isArray(raw)) return [];
-    return raw.filter(
-      (message): message is Turn =>
-        isObj(message) && (message.role === 'user' || message.role === 'model') && typeof message.text === 'string',
-    );
+    return raw
+      .filter(
+        (message): message is ChatTurn =>
+          isObj(message) && (message.role === 'user' || message.role === 'model') && typeof message.text === 'string',
+      )
+      .map(({ role, text, context }) => (typeof context === 'string' ? { role, text, context } : { role, text }));
   } catch {
     return [];
   }
 }
 
-function saveChat(messages: Turn[]): void {
+function saveChat(messages: ChatTurn[]): void {
   try {
     if (messages.length > 0) localStorage.setItem(CHAT_KEY, JSON.stringify(messages));
     else localStorage.removeItem(CHAT_KEY);
@@ -61,20 +72,33 @@ function takeDraft(): string {
 }
 
 /** Garde les derniers messages, en commençant toujours par un message de l'athlète. */
-function trim(messages: Turn[]): Turn[] {
+function trim(messages: ChatTurn[]): ChatTurn[] {
   const kept = messages.slice(-MAX_MESSAGES);
   while (kept[0]?.role === 'model') kept.shift();
   return kept;
 }
 
-/** Le premier message porte le contexte : la date du jour et l'historique. */
-function withContext(messages: Turn[]): Turn[] {
+/** Contexte donné au coach au début d'une conversation : la date du jour et l'historique. */
+function currentContext(): string {
   const history = buildHistory(HISTORY_LIMIT);
   const context = [`Date du jour : ${today()}`];
   if (history.entries.length > 0 || history.planned || history.activities) context.push(JSON.stringify(history));
+  return context.join('\n\n');
+}
+
+/** Le premier message porte le contexte ; une conversation plus ancienne que ce réglage le reçoit à jour. */
+function withContext(messages: ChatTurn[]): Turn[] {
   return messages.map((message, i) =>
-    i === 0 ? { role: message.role, text: `${context.join('\n\n')}\n\nQuestion : ${message.text}` } : message,
+    i === 0
+      ? { role: message.role, text: `${message.context ?? currentContext()}\n\nQuestion : ${message.text}` }
+      : { role: message.role, text: message.text },
   );
+}
+
+/** Aperçu de la réponse en cours d'écriture : le texte, sans le JSON d'une séance tant qu'il n'est pas fini. */
+function preview(text: string): string {
+  const fence = text.indexOf('```');
+  return fence === -1 ? text : `${text.slice(0, fence).trimEnd()}\n\nSéance en cours d’écriture…`;
 }
 
 const renderLine = (parts: Inline[]) => parts.map((part) => (part.bold ? h('strong', null, part.text) : part.text));
@@ -127,8 +151,8 @@ export function chatView(): View {
       h(
         'div',
         { class: 'notice' },
-        h('p', null, 'Configure le coach Gemini pour lui demander tes séances et lui poser tes questions, sans quitter l’appli.'),
-        h('a', { class: 'btn block', href: '#/coach' }, 'Configurer le coach Gemini'),
+        h('p', null, 'Configure le coach Claude pour lui demander tes séances et lui poser tes questions, sans quitter l’appli.'),
+        h('a', { class: 'btn block', href: '#/coach' }, 'Configurer le coach Claude'),
       ),
       h(
         'p',
@@ -145,12 +169,29 @@ export function chatView(): View {
   const input = h('textarea', { rows: 1, 'aria-label': 'Ton message', placeholder: 'Écris au coach…' });
   const sendBtn = h('button', { type: 'submit', class: 'send', 'aria-label': 'Envoyer' }, '↑');
   const typingNote = h('span', { class: 'typing-note' });
-  const typing = h(
-    'div',
-    { class: 'msg coach typing', role: 'status' },
-    h('span', { class: 'dots', 'aria-label': 'Le coach écrit' }, h('i'), h('i'), h('i')),
-    typingNote,
-  );
+  const dots = h('span', { class: 'dots', 'aria-label': 'Le coach écrit' }, h('i'), h('i'), h('i'));
+  const live = h('p', { class: 'live', hidden: true });
+  const typing = h('div', { class: 'msg coach typing', role: 'status' }, dots, live, typingNote);
+  /** Affiche la réponse au fil de l'eau, une fois par image au plus. */
+  let pending: string | null = null;
+  const showLive = (text: string) => {
+    if (pending === null) {
+      requestAnimationFrame(() => {
+        live.textContent = preview(pending ?? '');
+        live.hidden = live.textContent === '';
+        dots.hidden = !live.hidden;
+        pending = null;
+        scrollToEnd();
+      });
+    }
+    pending = text;
+  };
+  const resetLive = () => {
+    pending = null;
+    live.textContent = '';
+    live.hidden = true;
+    dots.hidden = false;
+  };
 
   const scrollToEnd = () => window.scrollTo({ top: document.documentElement.scrollHeight });
   const grow = () => {
@@ -169,29 +210,34 @@ export function chatView(): View {
   }
 
   /** Une réponse qui propose un WOD illisible par l'appli est renvoyée une fois au coach pour correction. */
-  async function answer(turns: Turn[], notify: (note: string) => void): Promise<string> {
-    const first = await generate(coach, turns, notify, CHAT_OPTIONS);
+  async function answer(turns: Turn[]): Promise<string> {
+    const options = { extra: COACH_FORMAT, onText: showLive };
+    const first = await generate(coach, turns, options);
     const proposed = proposesWod(first) ? parseImport(first) : null;
     if (!proposed || proposed.ok) return first;
-    notify('Séance refusée par l’appli : le coach la corrige…');
+    resetLive();
+    typingNote.textContent = 'Séance refusée par l’appli : le coach la corrige…';
     const correction: Turn[] = [...turns, { role: 'model', text: first }, { role: 'user', text: correctionRequest(proposed.errors) }];
-    return generate(coach, correction, notify, CHAT_OPTIONS);
+    return generate(coach, correction, options);
   }
 
   async function send(): Promise<void> {
     const text = input.value.trim();
     if (text === '') return toast('Écris d’abord ton message');
     if (sendBtn.disabled) return;
-    messages = trim([...messages, { role: 'user', text }]);
+    // Le contexte est fixé au premier message : la suite de la conversation ne le reconstruit pas.
+    const turn: ChatTurn = messages.length === 0 ? { role: 'user', text, context: currentContext() } : { role: 'user', text };
+    messages = trim([...messages, turn]);
     input.value = '';
     grow();
     errorBox.hidden = true;
     sendBtn.disabled = true;
     typingNote.textContent = '';
+    resetLive();
     renderThread(true);
     scrollToEnd();
     try {
-      const reply = await answer(withContext(messages), (note) => (typingNote.textContent = note));
+      const reply = await answer(withContext(messages));
       messages = [...messages, { role: 'model', text: reply }];
       saveChat(messages);
     } catch (error) {
@@ -199,7 +245,7 @@ export function chatView(): View {
       messages = messages.slice(0, -1);
       input.value = text;
       grow();
-      errorBox.textContent = error instanceof GeminiError ? error.message : 'Erreur inattendue : réessaie.';
+      errorBox.textContent = error instanceof CoachError ? error.message : 'Erreur inattendue : réessaie.';
       errorBox.hidden = false;
     } finally {
       sendBtn.disabled = false;
@@ -239,7 +285,7 @@ export function chatView(): View {
       'header',
       { class: 'chat-head' },
       h('a', { class: 'icon-btn', href: '#/', 'aria-label': 'Retour' }, '‹'),
-      h('div', { class: 'chat-title' }, h('strong', null, 'Coach'), h('span', null, coach.model)),
+      h('div', { class: 'chat-title' }, h('strong', null, 'Coach'), h('span', null, modelLabel(coach.model))),
       h('button', { class: 'icon-btn', 'aria-label': 'Nouvelle conversation', onclick: () => void reset() }, '✎'),
       h('a', { class: 'icon-btn', href: '#/coach', 'aria-label': 'Réglages du coach' }, '⚙'),
     ),
@@ -257,7 +303,7 @@ export function chatView(): View {
       input,
       sendBtn,
     ),
-    h('p', { class: 'chat-privacy' }, 'Tes messages, ton profil et ton historique sont envoyés à Google Gemini.'),
+    h('p', { class: 'chat-privacy' }, 'Tes messages, ton profil et ton historique sont envoyés à Anthropic (Claude).'),
   );
 
   // Ouvre la conversation sur le dernier message, et sur le champ quand un message est préparé.

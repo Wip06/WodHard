@@ -1,31 +1,33 @@
+import { checkKey, CoachError, loadCoach, MODELS, saveCoach } from '../claude';
 import { choose, h, toast } from '../dom';
-import { plural } from '../format';
-import { GeminiError, listModels, loadCoach, modelState, preferredModel, saveCoach, workingModel } from '../gemini';
 import { navigate, render, type View } from '../router';
 import { field, pageHead } from './parts';
 
-const KEY_PAGE = 'https://aistudio.google.com/app/apikey';
+const CONSOLE = 'https://console.anthropic.com/';
 
-/** Réglages du coach Gemini : clé API, modèle et instructions, gardés sur cet appareil. */
+/** Réglages du coach Claude : clé API, modèle et profil, gardés sur cet appareil. */
 export function coachView(): View {
   const saved = loadCoach();
-  /** Modèles de secours trouvés à la dernière vérification de la clé. */
-  let fallbacks = saved.fallbacks;
 
   const key = h('input', {
     type: 'password',
     autocomplete: 'off',
     autocapitalize: 'off',
     spellcheck: 'false',
-    placeholder: 'AIza…',
-    'aria-label': 'Clé API Gemini',
+    placeholder: 'sk-ant-…',
+    'aria-label': 'Clé API Claude',
   });
   key.value = saved.key;
 
-  const model = h('select', { 'aria-label': 'Modèle' });
-  const fillModels = (names: string[], selected: string) =>
-    model.replaceChildren(...names.map((name) => h('option', { value: name, selected: name === selected }, name)));
-  if (saved.model) fillModels([saved.model], saved.model);
+  const model = h(
+    'select',
+    { 'aria-label': 'Modèle' },
+    MODELS.map(({ id, label }) => h('option', { value: id, selected: id === saved.model }, label)),
+  );
+  const modelNote = h('p', { class: 'hint left' });
+  const showNote = () => (modelNote.textContent = MODELS.find(({ id }) => id === model.value)?.note ?? '');
+  model.addEventListener('change', showNote);
+  showNote();
 
   const instructions = h('textarea', {
     rows: 10,
@@ -38,70 +40,42 @@ export function coachView(): View {
   const status = h('p', { class: 'hint left', role: 'status' });
   const errorBox = h('div', { class: 'errors', role: 'alert', hidden: true });
   const showError = (message: string) => {
+    status.textContent = '';
     errorBox.textContent = message;
     errorBox.hidden = false;
   };
 
-  const verify = async () => {
+  /** Vérifie la clé sur le modèle choisi : la demande est gratuite. */
+  const verified = async (): Promise<boolean> => {
     errorBox.hidden = true;
-    if (key.value.trim() === '') return showError('Colle d’abord ta clé API.');
+    if (key.value.trim() === '') {
+      showError('Colle d’abord ta clé API.');
+      return false;
+    }
     status.textContent = 'Vérification de la clé…';
     try {
-      const models = await listModels(key.value);
-      const available = `${plural(models.length, 'modèle')} ${models.length > 1 ? 'disponibles' : 'disponible'}`;
-      status.textContent = `Clé valide : ${available}. Test du modèle…`;
-      const first = models.includes(model.value) ? model.value : preferredModel(models);
-      const choice = await workingModel(key.value, models, first);
-      fillModels(models, choice.model);
-      fallbacks = choice.fallbacks;
-      const named = (state: string) => choice.skipped.filter((entry) => entry.state === state).map((entry) => entry.model);
-      const missing = named('missing');
-      const busy = named('busy');
-      status.textContent = [
-        `Clé valide : ${available}. Modèle ${choice.model} opérationnel.`,
-        missing.length > 0 && `${missing.join(', ')} ne répond pas.`,
-        busy.length > 0 && `${busy.join(', ')} saturé pour le moment.`,
-      ]
-        .filter(Boolean)
-        .join(' ');
+      const name = await checkKey(key.value, model.value);
+      status.textContent = `Clé valide : ${name} est disponible.`;
+      return true;
     } catch (error) {
-      status.textContent = '';
-      showError(error instanceof GeminiError ? error.message : 'Vérification impossible : réessaie.');
+      showError(error instanceof CoachError ? error.message : 'Vérification impossible : réessaie.');
+      return false;
     }
   };
 
   const save = async () => {
-    errorBox.hidden = true;
-    const settings = {
-      key: key.value.trim(),
-      model: model.value,
-      fallbacks: fallbacks.filter((name) => name !== model.value),
-      instructions: instructions.value.trim(),
-    };
-    const missing = [
-      settings.key === '' && 'la clé API',
-      settings.model === '' && 'le modèle (vérifie la clé pour obtenir la liste)',
-    ].filter(Boolean);
-    if (missing.length > 0) return showError(`À compléter : ${missing.join(', ')}.`);
+    if (!(await verified())) return;
     try {
-      // Le modèle a pu être changé à la main dans la liste : on vérifie qu'il répond avant de l'enregistrer.
-      // Un modèle saturé reste enregistrable : la surcharge est passagère et les secours prennent le relais.
-      status.textContent = 'Test du modèle…';
-      if ((await modelState(settings.key, settings.model)) === 'missing') {
-        status.textContent = '';
-        return showError(`Le modèle ${settings.model} ne répond pas : appuie sur « Vérifier la clé » pour en choisir un qui marche.`);
-      }
-      saveCoach(settings);
+      saveCoach({ key: key.value.trim(), model: model.value, instructions: instructions.value.trim() });
       toast('Coach prêt');
       navigate('/ask');
     } catch (error) {
-      status.textContent = '';
-      showError(error instanceof GeminiError ? error.message : 'Enregistrement impossible.');
+      showError(error instanceof CoachError ? error.message : 'Enregistrement impossible.');
     }
   };
 
   const reset = async () => {
-    const confirmed = await choose('Effacer les réglages du coach ?', 'La clé et les instructions seront retirées de cet appareil.', [
+    const confirmed = await choose('Effacer les réglages du coach ?', 'La clé et le profil seront retirés de cet appareil.', [
       { label: 'Effacer', value: true, kind: 'danger' },
       { label: 'Annuler', value: false },
     ]);
@@ -114,37 +88,45 @@ export function coachView(): View {
   const el = h(
     'section',
     { class: 'page' },
-    pageHead('Coach Gemini', { href: '#/data', label: 'Données' }),
-    h('p', { class: 'lead' }, 'Le coach génère tes WOD directement dans l’appli, avec l’API gratuite de Google Gemini.'),
+    pageHead('Coach Claude', { href: '#/data', label: 'Données' }),
+    h('p', { class: 'lead' }, 'Le coach crée tes WOD et répond à tes questions dans l’appli, avec l’API Claude d’Anthropic.'),
+    h(
+      'div',
+      { class: 'notice' },
+      h('p', null, 'L’API est payante, à l’usage : chaque message est facturé sur ton compte Anthropic. Elle n’est pas comprise dans un abonnement Claude (Pro ou Max).'),
+    ),
+    saved.key === '' &&
+      saved.instructions !== '' &&
+      h('p', { class: 'hint left' }, 'Ton profil est conservé : il ne manque que ta clé Claude.'),
     h(
       'ol',
       { class: 'steps' },
       h(
         'li',
         null,
-        'Crée une clé gratuite sur ',
-        h('a', { href: KEY_PAGE, target: '_blank', rel: 'noopener' }, 'Google AI Studio'),
-        ' (« Create API key »).',
+        'Sur ',
+        h('a', { href: CONSOLE, target: '_blank', rel: 'noopener' }, 'console.anthropic.com'),
+        ', ajoute du crédit (Billing) et fixe une limite de dépense mensuelle si tu veux.',
       ),
-      h('li', null, 'Colle-la ci-dessous, puis appuie sur « Vérifier la clé ».'),
-      h('li', null, 'Colle ton profil et tes consignes, puis enregistre. Le format des WOD est fourni par l’appli : inutile de le recopier.'),
+      h('li', null, 'Crée une clé (API keys › Create key) et colle-la ci-dessous.'),
+      h('li', null, 'Choisis le modèle, colle ton profil, puis enregistre. Le format des WOD est fourni par l’appli : inutile de le recopier.'),
     ),
     h(
       'div',
       { class: 'stack' },
       field('Clé API', key),
-      h('button', { class: 'btn block', onclick: () => void verify() }, 'Vérifier la clé'),
+      h('button', { class: 'btn block', onclick: () => void verified() }, 'Vérifier la clé'),
       status,
     ),
-    field('Modèle', model),
+    h('div', { class: 'stack' }, field('Modèle', model), modelNote),
     h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Profil et consignes'), instructions),
     errorBox,
     h('button', { class: 'btn primary big block', onclick: () => void save() }, 'Enregistrer'),
     h(
       'p',
       { class: 'hint' },
-      'Ces réglages restent sur cet appareil et ne font pas partie des sauvegardes. ',
-      'À chaque message, ton profil et ton historique sont envoyés à Google.',
+      'Ta clé reste sur cet appareil et ne fait pas partie des sauvegardes. ',
+      'À chaque message, ton profil et ton historique sont envoyés à Anthropic.',
     ),
     saved.key !== '' && h('button', { class: 'btn ghost danger block', onclick: () => void reset() }, 'Effacer les réglages du coach'),
   );

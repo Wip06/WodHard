@@ -12,7 +12,7 @@ import {
   sortedActivities,
   sortedResults,
 } from '../store';
-import { coachReady, loadCoach } from '../gemini';
+import { coachReady, loadCoach } from '../claude';
 import { parseBackup } from '../validate';
 import { pageHead } from './parts';
 
@@ -177,7 +177,7 @@ export function dataView(): View {
       h(
         'a',
         { class: 'btn block', href: '#/coach' },
-        coachReady(loadCoach()) ? 'Coach Gemini : configuré' : 'Configurer le coach Gemini',
+        coachReady(loadCoach()) ? 'Coach Claude : configuré' : 'Configurer le coach Claude',
       ),
       picker,
       errorBox,

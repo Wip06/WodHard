@@ -864,7 +864,7 @@ textarea {
   border: 0;
 }
 
-/* Coach Gemini : conversation */
+/* Coach : conversation */
 
 .chat-page {
   display: flex;
@@ -984,6 +984,17 @@ textarea {
 .typing-note {
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+/* Réponse affichée pendant qu'elle s'écrit. */
+.typing:has(.live:not([hidden])) {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.typing .live {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .dots {

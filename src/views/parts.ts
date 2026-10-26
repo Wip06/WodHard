@@ -1,5 +1,5 @@
 import { h } from '../dom';
-import { CHAT_DRAFT_KEY, coachReady, loadCoach } from '../gemini';
+import { CHAT_DRAFT_KEY, coachReady, loadCoach } from '../claude';
 import { navigate } from '../router';
 import {
   clock,
@@ -224,7 +224,7 @@ export function splitsList(wod: Wod, splits: number[], previous?: number[]): HTM
 
 /** Fiche complète d'un WOD : titre, contexte, échauffement et contenu. */
 export function wodSheet(wod: Wod): HTMLElement {
-  // « Comment faire ? » n'a de sens qu'avec un coach Gemini prêt à répondre.
+  // « Comment faire ? » n'a de sens qu'avec un coach prêt à répondre.
   const askable = coachReady(loadCoach());
   return h(
     'article',

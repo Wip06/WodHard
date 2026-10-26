@@ -1,6 +1,6 @@
 import { choose, h, toast } from '../dom';
 import { dateLabel, scoreLine } from '../format';
-import { coachReady, loadCoach } from '../gemini';
+import { coachReady, loadCoach } from '../claude';
 import { navigate, type View } from '../router';
 import { isOverCap, lastSplits, scoreDelta } from '../records';
 import { currentRecords, deleteResult, findResult, findWod, sameWorkout, sortedActivities, sortedResults } from '../store';

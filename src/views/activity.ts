@@ -1,6 +1,6 @@
 import { choose, h, toast } from '../dom';
 import { clock, dateLabel, today } from '../format';
-import { coachReady, loadCoach } from '../gemini';
+import { coachReady, loadCoach } from '../claude';
 import { navigate, type View } from '../router';
 import { activityLine, activityName, distanceText, paceText, SPORT_INFO } from '../sports';
 import { deleteActivity, findActivity, newId, saveActivity } from '../store';
