@@ -986,6 +986,12 @@ textarea {
   font-size: 0.88rem;
 }
 
+/* Réponse du coach et place réservée en dessous, pour qu'elle s'écrive sans faire défiler l'écran. */
+.turn {
+  display: flex;
+  flex-direction: column;
+}
+
 /* Réponse affichée pendant qu'elle s'écrit, avec le même espacement qu'une fois finie. */
 .live-body {
   display: flex;

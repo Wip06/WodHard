@@ -95,10 +95,33 @@ function withContext(messages: ChatTurn[]): Turn[] {
   );
 }
 
-/** Images pour rattraper le texte reçu : le réseau l'envoie par paquets, l'écran le révèle régulièrement. */
-const REVEAL_FRAMES = 6;
+/**
+ * Révélation du texte : le réseau l'envoie par paquets irréguliers, l'écran le montre à un rythme
+ * lissé, avec en moyenne ce retard sur le texte reçu. Assez long pour ne jamais se vider entre deux
+ * paquets, assez court pour suivre le coach.
+ */
+const REVEAL_LAG_MS = 400;
+/** Une fois la réponse complète, le reste s'affiche plus vite. */
+const FINISH_LAG_MS = 120;
+/** Vitesse minimale, en caractères par seconde, pour que la fin d'une réponse ne traîne pas. */
+const MIN_REVEAL_CPS = 60;
 /** Attente maximale, en fin de réponse, pour finir de révéler le texte avant d'afficher la bulle finale. */
-const SETTLE_MS = 1000;
+const SETTLE_MS = 1500;
+/** Durée du défilement qui monte la question en haut de l'écran : le texte ne s'écrit qu'après. */
+const SCROLL_MS = 450;
+
+/**
+ * Fin du mot qui contient la position `index` : le texte se révèle mot par mot, pour qu'un mot ne
+ * s'écrive jamais lettre à lettre au bord de la bulle avant de sauter à la ligne. Un dernier mot
+ * peut-être incomplet attend la suite, sauf quand la réponse est finie.
+ */
+function wordEnd(text: string, index: number, complete: boolean): number {
+  let end = index;
+  while (end < text.length && !/\s/.test(text.charAt(end))) end++;
+  if (end < text.length || complete) return end;
+  for (let i = index - 1; i >= 0; i--) if (/\s/.test(text.charAt(i))) return i;
+  return 0;
+}
 
 
 const renderLine = (parts: Inline[]) => parts.map((part) => (part.bold ? h('strong', null, part.text) : part.text));
@@ -136,64 +159,93 @@ function coachContent(text: string): (HTMLElement | false | null | undefined)[] 
 const coachBubble = (text: string) => h('div', { class: 'msg coach' }, coachContent(text));
 
 /**
- * Bulle du coach pendant qu'il écrit : trois points, puis le texte révélé à un rythme régulier, déjà
- * mis en forme comme il le sera une fois fini. `onGrow` est appelé quand la bulle grandit.
+ * Bulle du coach pendant qu'il écrit : trois points, puis le texte révélé mot par mot à un rythme
+ * régulier, déjà mis en forme comme il le sera une fois fini.
  */
-function writingBubble(onGrow: (bubble: HTMLElement) => void) {
+function writingBubble(holdMs = 0) {
   const dots = h('span', { class: 'dots', 'aria-label': 'Le coach écrit' }, h('i'), h('i'), h('i'));
   const note = h('span', { class: 'typing-note' });
   const status = h('div', { class: 'typing' }, dots, note);
   const body = h('div', { class: 'live-body', hidden: true });
   const el = h('div', { class: 'msg coach writing', role: 'status' }, body, status);
   let received = '';
+  /** Position révélée, en caractères (fractionnaire : elle avance un peu à chaque image). */
+  let position = 0;
+  /** Caractères affichés, arrêtés à la fin d'un mot. */
   let shown = 0;
+  let complete = false;
   let frame = 0;
+  let last: number | undefined;
   let caughtUp: (() => void) | null = null;
+  const startAt = performance.now() + holdMs;
 
   const refresh = () => {
     body.hidden = body.childElementCount === 0;
     dots.hidden = !body.hidden;
     status.hidden = dots.hidden && note.textContent === '';
   };
-  const paint = () => {
+  const paint = (now: number) => {
     frame = 0;
-    const backlog = received.length - shown;
+    if (now < startAt) {
+      frame = requestAnimationFrame(paint);
+      return;
+    }
+    // Pas de temps réel entre deux images : le rythme est le même à 60 ou 120 images par seconde.
+    const elapsed = Math.min(now - (last ?? now), 100);
+    last = now;
+    const backlog = received.length - position;
     if (backlog > 0) {
-      // Plus le retard est grand, plus la révélation accélère : elle ne traîne jamais derrière le coach.
-      shown += Math.max(1, Math.ceil(backlog / REVEAL_FRAMES));
+      const lag = complete ? FINISH_LAG_MS : REVEAL_LAG_MS;
+      position = Math.min(received.length, position + Math.max((MIN_REVEAL_CPS * elapsed) / 1000, (backlog * elapsed) / lag));
+    }
+    const cut = wordEnd(received, Math.floor(position), complete);
+    if (cut > shown) {
+      shown = cut;
       body.replaceChildren(...coachContent(preview(received.slice(0, shown))).filter((node) => node instanceof HTMLElement));
       refresh();
-      onGrow(el);
     }
-    if (shown < received.length) frame = requestAnimationFrame(paint);
-    else {
+    if (shown >= received.length && complete) {
       caughtUp?.();
       caughtUp = null;
+    } else if (position < received.length || (complete && shown < received.length)) {
+      frame = requestAnimationFrame(paint);
+    } else {
+      // Tout est révélé sauf peut-être un mot en cours : on attend le prochain paquet.
+      last = undefined;
     }
+  };
+  const run = () => {
+    if (!frame) frame = requestAnimationFrame(paint);
   };
 
   return {
     el,
     show(text: string): void {
       received = text;
-      if (!frame) frame = requestAnimationFrame(paint);
+      run();
     },
     /** Repart de zéro, avec un message d'attente (le coach corrige sa séance). */
     restart(message: string): void {
       cancelAnimationFrame(frame);
       frame = 0;
+      last = undefined;
       received = '';
+      position = 0;
       shown = 0;
+      complete = false;
       body.replaceChildren();
       note.textContent = message;
       refresh();
     },
-    /** Attend que tout le texte reçu soit à l'écran. */
-    settle(): Promise<void> {
+    /** La réponse est complète : attend que tout son texte soit à l'écran. */
+    settle(text: string): Promise<void> {
+      received = text;
+      complete = true;
       if (shown >= received.length) return Promise.resolve();
       return new Promise((resolve) => {
         caughtUp = resolve;
         window.setTimeout(resolve, SETTLE_MS);
+        run();
       });
     },
     stop(): void {
@@ -237,10 +289,19 @@ export function chatView(): View {
   const input = h('textarea', { rows: 1, 'aria-label': 'Ton message', placeholder: 'Écris au coach…' });
   const sendBtn = h('button', { type: 'submit', class: 'send', 'aria-label': 'Envoyer' }, '↑');
   const scrollToEnd = () => window.scrollTo({ top: document.documentElement.scrollHeight });
-  /** Suit la réponse tant que son début reste à l'écran ; au-delà, elle se lit à son rythme, sans saut. */
-  const follow = (bubble: HTMLElement) => {
-    const header = document.querySelector('.chat-head')?.getBoundingClientRect().bottom ?? 0;
-    if (bubble.getBoundingClientRect().top > header + 12) scrollToEnd();
+  /** Espace réservé sous la dernière question, pour que la réponse s'y écrive sans faire défiler l'écran. */
+  let lastTurn: HTMLElement | null = null;
+  /**
+   * Monte la question en haut de l'écran, une seule fois et en douceur, et réserve la place de la
+   * réponse en dessous : elle s'écrit ensuite sans que rien ne bouge. Une réponse plus longue que
+   * l'écran se lit en faisant défiler soi-même.
+   */
+  const makeRoom = (asked: HTMLElement, turn: HTMLElement) => {
+    const header = document.querySelector('.chat-head')?.getBoundingClientRect().height ?? 0;
+    const composer = document.querySelector('.composer')?.getBoundingClientRect().height ?? 0;
+    turn.style.minHeight = `${Math.max(0, window.innerHeight - header - composer - asked.offsetHeight - 40)}px`;
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: Math.max(0, asked.getBoundingClientRect().top + window.scrollY - header - 12), behavior: smooth ? 'smooth' : 'auto' });
   };
   const grow = () => {
     input.style.height = 'auto';
@@ -281,23 +342,26 @@ export function chatView(): View {
     sendBtn.disabled = true;
     // Les bulles s'ajoutent à la suite : rien de ce qui est déjà affiché n'est redessiné.
     if (starting) thread.replaceChildren();
+    // L'espace gardé sous la réponse précédente n'a plus lieu d'être.
+    if (lastTurn) lastTurn.style.minHeight = '';
     const asked = userBubble(text);
-    const writing = writingBubble(follow);
-    thread.append(asked, writing.el);
-    scrollToEnd();
+    const writing = writingBubble(SCROLL_MS);
+    const room = h('div', { class: 'turn' }, writing.el);
+    lastTurn = room;
+    thread.append(asked, room);
+    makeRoom(asked, room);
     try {
       const reply = await answer(withContext(messages), writing);
-      await writing.settle();
-      const bubble = coachBubble(reply);
-      writing.el.replaceWith(bubble);
-      follow(bubble);
+      await writing.settle(reply);
+      writing.el.replaceWith(coachBubble(reply));
       messages = [...messages, { role: 'model', text: reply }];
       saveChat(messages);
     } catch (error) {
       // Le message n'a pas eu de réponse : il revient dans le champ, prêt à être renvoyé.
       writing.stop();
       asked.remove();
-      writing.el.remove();
+      room.remove();
+      lastTurn = null;
       messages = messages.slice(0, -1);
       if (messages.length === 0) renderThread();
       input.value = text;
