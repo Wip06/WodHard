@@ -106,7 +106,7 @@ export function resultView(id: string): View | null {
       'div',
       { class: 'stack' },
       coachReady(loadCoach()) && h('button', { class: 'btn primary block', onclick: () => askAdvice(result) }, 'Avis du coach'),
-      h('a', { class: 'btn block', href: `#/history/${id}/strava` }, 'Image pour Strava'),
+      h('a', { class: 'btn block', href: `#/history/${id}/recap` }, 'Récapitulatif'),
       h('a', { class: 'btn block', href: `#/score/${id}` }, 'Modifier le score'),
       inLibrary && h('a', { class: 'btn block', href: `#/wod/${result.wod_id}` }, 'Refaire ce WOD'),
       h('button', { class: 'btn ghost danger block', onclick: () => void remove() }, 'Supprimer cette séance'),
@@ -124,10 +124,10 @@ function previousOf(id: string) {
 }
 
 /**
- * Image de la séance pour Strava : à enregistrer dans ses photos, puis à ajouter à l'activité que
- * la montre a créée, pour que Strava en reprenne le contenu.
+ * Récapitulatif de la séance, en image : à enregistrer dans ses photos, par exemple pour l'ajouter
+ * à l'activité Strava que la montre a créée, pour que Strava en reprenne le contenu.
  */
-export function stravaImageView(id: string): View | null {
+export function recapView(id: string): View | null {
   const result = findResult(id);
   if (!result) return null;
   const card = sessionCard(result, previousOf(id), currentRecords().has(id));
@@ -151,7 +151,7 @@ export function stravaImageView(id: string): View | null {
   const el = h(
     'section',
     { class: 'page' },
-    pageHead('Image pour Strava', { href: `#/history/${id}`, label: 'Séance' }),
+    pageHead('Récapitulatif', { href: `#/history/${id}`, label: 'Séance' }),
     h('p', { class: 'lead' }, 'Enregistre-la dans tes photos, puis ajoute-la à ton activité Strava : Strava en reprend le contenu.'),
     image,
     save,
