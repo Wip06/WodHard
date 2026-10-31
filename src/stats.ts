@@ -1,5 +1,5 @@
-import { addDays, mondayOf, typeLabel } from './format';
-import { allMovements, canonicalName, isRest } from './movements';
+import { addDays, duration, mondayOf, plural, scoreLine, typeLabel } from './format';
+import { allMovements, blocksOf, canonicalName, isRest } from './movements';
 import { compareScores, repsPerRound, workKey } from './records';
 import { activityName } from './sports';
 import { plannedSets, restOf, volume } from './strength';
@@ -22,8 +22,16 @@ export interface Session {
 }
 
 /** Durée d'effort d'un WOD fait, en secondes, quand on peut la connaître. */
-export function resultDuration({ wod, score }: Result): number | undefined {
+export function resultDuration({ wod, score }: Pick<Result, 'wod' | 'score'>): number | undefined {
   switch (wod.type) {
+    case 'session': {
+      // Somme des blocs faits ; les blocs passés ne comptent pas.
+      const blocks = 'blocks' in score ? score.blocks : [];
+      return wod.blocks.reduce((sum, block, i) => {
+        const done = blocks[i];
+        return done ? sum + (resultDuration({ wod: block, score: done }) ?? 0) : sum;
+      }, 0);
+    }
     case 'amrap':
       return wod.duration_sec;
     case 'emom':
@@ -41,6 +49,20 @@ export function resultDuration({ wod, score }: Result): number | undefined {
       return wod.exercises.reduce((sum, exercise) => sum + plannedSets(exercise).length * (40 + restOf(exercise)), 0);
     }
   }
+}
+
+/**
+ * Score en titre d'une séance. Pour une séance en blocs, le détail suit bloc par bloc : le titre
+ * dit seulement combien de blocs sont faits, et la durée d'effort.
+ */
+export function scoreHeadline(result: Pick<Result, 'wod' | 'score'>): string {
+  const { wod, score } = result;
+  if (wod.type !== 'session' || !('blocks' in score)) return scoreLine(wod, score);
+  const done = score.blocks.filter((block) => block !== null).length;
+  const total = wod.blocks.length;
+  const blocks = done === total ? `${plural(total, 'bloc')} faits` : `${plural(done, 'bloc')} sur ${total}`;
+  const effort = resultDuration(result);
+  return effort ? `${blocks} · ${duration(effort)}` : blocks;
 }
 
 export function sessionsOf(results: Result[], activities: Activity[]): Session[] {
@@ -88,6 +110,8 @@ export function familyOf(movement: Movement): Exclude<Family, 'autre'> {
 
 /** Valeur d'un score pour la mini-courbe : plus grand = meilleur. */
 export function performance(wod: Wod, score: Score): number {
+  // Une séance en blocs n'a pas de score unique : pas de courbe.
+  if ('blocks' in score) return 0;
   if ('exercises' in score) return wod.type === 'strength' ? volume(wod, score) : 0;
   if ('rounds' in score) {
     const perRound = wod.type === 'amrap' ? repsPerRound(wod.movements) : undefined;
@@ -213,8 +237,11 @@ export function dashboard({ results, activities, plan, today, weeks, records }: 
   // Répartition : types de WOD et sports, puis familles de mouvements.
   const kinds = new Map<string, { label: string; count: number; sport?: Sport }>();
   for (const { wod } of periodResults) {
-    const entry = kinds.get(wod.type) ?? { label: typeLabel(wod.type), count: 0 };
-    kinds.set(wod.type, { ...entry, count: entry.count + 1 });
+    // Une séance en blocs compte pour chacun de ses formats (force et AMRAP, par exemple).
+    for (const type of new Set(blocksOf(wod).map((block) => block.type))) {
+      const entry = kinds.get(type) ?? { label: typeLabel(type), count: 0 };
+      kinds.set(type, { ...entry, count: entry.count + 1 });
+    }
   }
   for (const activity of periodActivities) {
     const label = activityName(activity);

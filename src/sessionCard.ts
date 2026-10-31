@@ -1,7 +1,8 @@
 import { adjustmentText, clock, duration, load, quantity, scoreLine, setsLine, teamLabel, typeLabel, wodSummary } from './format';
-import { isRest } from './movements';
+import { blocksOf, isRest } from './movements';
 import { beyondPrescribed, isOverCap, scoreDelta } from './records';
-import type { Movement, Result, Score, Wod, WodType } from './types';
+import { scoreHeadline } from './stats';
+import type { Movement, Result, Score, SingleScore, SingleWod, WodType } from './types';
 
 /** Couleur d'une étiquette : celle du type de WOD, ou un sens (record, Rx, hors cap…). */
 export type Tone = WodType | 'accent' | 'good' | 'warn' | 'muted';
@@ -42,7 +43,7 @@ function movementRow(movement: Movement, scheme?: string): string {
   return [amount, movement.name].filter(Boolean).join(' ') + (weight ? ` · ${weight}` : '');
 }
 
-function movementSection(wod: Wod, score: Score, splits: number[]): Section {
+function movementSection(wod: SingleWod, score: Score, splits: number[]): Section {
   switch (wod.type) {
     case 'strength': {
       // Les séries réellement faites, exercice par exercice.
@@ -86,9 +87,9 @@ function movementSection(wod: Wod, score: Score, splits: number[]): Section {
  */
 export function sessionCard(result: Result, previous?: Result, record = false): SessionCard {
   const { wod, score } = result;
-  const splits = 'splits_sec' in score ? (score.splits_sec ?? []) : [];
 
-  const tags: SessionCard['tags'] = [{ text: typeLabel(wod.type), tone: wod.type }];
+  // Une séance en blocs prend l'étiquette de chacun de ses formats.
+  const tags: SessionCard['tags'] = [...new Set(blocksOf(wod).map((block) => block.type))].map((type) => ({ text: typeLabel(type), tone: type }));
   if (wod.team_size) tags.push({ text: teamLabel(wod.team_size), tone: 'good' });
   tags.push(score.rx ? { text: beyondPrescribed(wod, score) ? 'Rx+' : 'Rx', tone: 'good' } : { text: 'Scaled', tone: 'muted' });
   if (record) tags.push({ text: 'Record', tone: 'accent' });
@@ -104,6 +105,28 @@ export function sessionCard(result: Result, previous?: Result, record = false): 
     });
   }
 
+  const sections: Section[] =
+    wod.type === 'session' && 'blocks' in score
+      ? wod.blocks.map((block, i) => blockSection(block, score.blocks[i] ?? null))
+      : wod.type === 'session' || 'blocks' in score
+        ? []
+        : singleSections(wod, score);
+
+  return {
+    date: fullDate(result.date),
+    tags,
+    title: wod.title,
+    format: wodSummary(wod),
+    score: scoreHeadline(result),
+    details,
+    sections,
+    ...(score.notes && { notes: score.notes }),
+  };
+}
+
+/** Temps par tour, mouvements (ou séries) et adaptations d'un WOD d'un seul format. */
+function singleSections(wod: SingleWod, score: SingleScore): Section[] {
+  const splits = 'splits_sec' in score ? (score.splits_sec ?? []) : [];
   const sections: Section[] = [];
   if (wod.type !== 'hyrox' && splits.length > 0) {
     const scheme = wod.type === 'for_time' ? wod.rep_scheme : undefined;
@@ -119,17 +142,18 @@ export function sessionCard(result: Result, previous?: Result, record = false): 
   if (score.adjustments && score.adjustments.length > 0) {
     sections.push({ title: 'Adapté', rows: score.adjustments.map((adjustment) => ({ text: adjustmentText(wod, adjustment) })) });
   }
+  return sections;
+}
 
-  return {
-    date: fullDate(result.date),
-    tags,
-    title: wod.title,
-    format: wodSummary(wod),
-    score: scoreLine(wod, score),
-    details,
-    sections,
-    ...(score.notes && { notes: score.notes }),
-  };
+/** Un bloc d'une séance, sur une section : son score en titre, puis mouvements, temps par tour et adaptations. */
+function blockSection(block: SingleWod, done: SingleScore | null): Section {
+  if (done === null) return { title: block.title, rows: [{ text: `${wodSummary(block)} · bloc passé` }] };
+  const splits = 'splits_sec' in done ? (done.splits_sec ?? []) : [];
+  const rows = [...movementSection(block, done, splits).rows];
+  // En Hyrox, les temps sont déjà sur les segments.
+  if (block.type !== 'hyrox') splits.forEach((sec, i) => rows.push({ text: `Tour ${i + 1}`, value: clock(sec) }));
+  for (const adjustment of done.adjustments ?? []) rows.push({ text: `Adapté : ${adjustmentText(block, adjustment)}` });
+  return { title: `${block.title} · ${scoreLine(block, done)}`, rows };
 }
 
 /** Nom du fichier image : « wodhard-2026-10-31-fran.png ». */

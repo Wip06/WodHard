@@ -1,4 +1,4 @@
-import type { Wod } from './types';
+import type { SingleWod } from './types';
 
 export const COUNTDOWN_MS = 10_000;
 
@@ -34,7 +34,7 @@ export const pause = (clock: Clock, now: number): Clock => ({ accumMs: elapsedMs
 export const resume = (clock: Clock, now: number): Clock =>
   clock.resumedAt === null ? { ...clock, resumedAt: now } : clock;
 
-export function totalMs(wod: Wod): number {
+export function totalMs(wod: SingleWod): number {
   switch (wod.type) {
     case 'amrap':
       return wod.duration_sec * 1000;
@@ -55,7 +55,7 @@ export function totalMs(wod: Wod): number {
  * État du chrono à un instant. Un AMRAP ou un EMOM se termine avec sa durée ; un For Time ou un
  * Hyrox ne se termine jamais tout seul : passé le cap, il continue en « hors cap » jusqu'au Finish.
  */
-export function frame(wod: Wod, ms: number): Frame {
+export function frame(wod: SingleWod, ms: number): Frame {
   const total = totalMs(wod);
   if (ms < 0) return { phase: 'countdown', seconds: Math.ceil(-ms / 1000), interval: 0, overtime: false };
   if (wod.type === 'for_time' || wod.type === 'hyrox' || wod.type === 'strength') {
@@ -98,7 +98,7 @@ export function cuesIn(boundaryAt: (ms: number) => Cue | null, fromMs: number, t
 }
 
 /** Signaux d'un WOD : bip long au départ et à chaque changement d'intervalle, signal de fin. */
-export function cuesBetween(wod: Wod, fromMs: number, toMs: number): Cue[] {
+export function cuesBetween(wod: SingleWod, fromMs: number, toMs: number): Cue[] {
   const total = totalMs(wod);
   const span = wod.type === 'emom' ? wod.interval_sec * 1000 : total;
   return cuesIn(

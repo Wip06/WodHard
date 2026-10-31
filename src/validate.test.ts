@@ -152,7 +152,7 @@ describe('validateWod', () => {
 
   it('refuse un type inconnu', () => {
     expect(errorsOf({ ...cindy, type: 'tabata' })).toEqual([
-      'type : doit valoir "amrap", "emom", "for_time", "hyrox" ou "strength"',
+      'type : doit valoir "amrap", "emom", "for_time", "hyrox", "strength" ou "session"',
     ]);
   });
 
@@ -373,7 +373,7 @@ describe('validateBackup', () => {
 describe('instructions du projet Claude', () => {
   it('ne donnent que des exemples acceptés par l’application', () => {
     const blocks = [...instructions.matchAll(/```json\n([\s\S]*?)```/g)].map((match) => match[1] ?? '');
-    expect(blocks).toHaveLength(8);
+    expect(blocks).toHaveLength(9);
     for (const block of blocks) expect(parseImport(block)).toMatchObject({ ok: true });
   });
 });

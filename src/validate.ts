@@ -20,6 +20,10 @@ import type {
   Result,
   SavedWod,
   Score,
+  SessionScore,
+  SessionWod,
+  SingleScore,
+  SingleWod,
   Sport,
   StrengthScore,
   StrengthSet,
@@ -43,6 +47,9 @@ const SET_KEYS = ['reps', 'duration_sec', 'load_kg'];
 /** Séries au plus par exercice, et exercices au plus par séance. */
 const MAX_SETS = 30;
 const MAX_EXERCISES = 30;
+/** Blocs d'une séance : au moins deux (un seul bloc, c'est un WOD de son format). */
+const MIN_BLOCKS = 2;
+const MAX_BLOCKS = 8;
 const TITLE_MAX = 60;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^[\w-]{1,64}$/;
@@ -273,12 +280,13 @@ function checkRepScheme(raw: unknown, path: string, errors: string[], rounds?: n
   return errors.length === before ? scheme.filter(isDefined) : undefined;
 }
 
-function checkWod(raw: unknown, path: string, errors: string[]): Wod | undefined {
-  if (!isObj(raw)) return fail(errors, path, 'le WOD doit être un objet JSON { … }');
+/** Un WOD ; `inBlock` : c'est un bloc d'une séance, dont `schema_version` peut être omis. */
+function checkWod(raw: unknown, path: string, errors: string[], inBlock = false): Wod | undefined {
+  if (!isObj(raw)) return fail(errors, path, inBlock ? 'le bloc doit être un objet JSON { … }' : 'le WOD doit être un objet JSON { … }');
   const before = errors.length;
   const at = (key: string) => join(path, key);
 
-  if (raw.schema_version !== 1) fail(errors, at('schema_version'), 'doit valoir 1');
+  if (raw.schema_version !== 1 && !(inBlock && raw.schema_version === undefined)) fail(errors, at('schema_version'), 'doit valoir 1');
   const title = checkText(raw.title, at('title'), errors, TITLE_MAX);
   const description = optionalText(raw.description, at('description'), errors);
   const warmup = optionalText(raw.warmup, at('warmup'), errors);
@@ -350,8 +358,27 @@ function checkWod(raw: unknown, path: string, errors: string[]): Wod | undefined
       if (errors.length > before || exercises === undefined) return undefined;
       return compact<StrengthWod>({ schema_version: 1, type: 'strength', ...base, exercises });
     }
+    case 'session': {
+      if (inBlock) return fail(errors, at('type'), 'un bloc ne peut pas contenir d’autres blocs');
+      unknownKeys(raw, [...WOD_KEYS, 'blocks'], path, errors);
+      let blocks: SingleWod[] | undefined;
+      if (!Array.isArray(raw.blocks)) fail(errors, at('blocks'), 'doit être une liste de WOD');
+      else if (raw.blocks.length < MIN_BLOCKS || raw.blocks.length > MAX_BLOCKS) {
+        fail(errors, at('blocks'), `doit contenir de ${MIN_BLOCKS} à ${MAX_BLOCKS} blocs (un seul bloc : donne directement son WOD)`);
+      } else {
+        blocks = raw.blocks
+          .map((item, i) => checkWod(item, `${at('blocks')}[${i}]`, errors, true))
+          .filter((block): block is SingleWod => block !== undefined && block.type !== 'session');
+      }
+      if (errors.length > before || blocks === undefined) return undefined;
+      return compact<SessionWod>({ schema_version: 1, type: 'session', ...base, blocks });
+    }
     default:
-      return fail(errors, at('type'), 'doit valoir "amrap", "emom", "for_time", "hyrox" ou "strength"');
+      return fail(
+        errors,
+        at('type'),
+        inBlock ? 'doit valoir "amrap", "emom", "for_time", "hyrox" ou "strength"' : 'doit valoir "amrap", "emom", "for_time", "hyrox", "strength" ou "session"',
+      );
   }
 }
 
@@ -366,10 +393,34 @@ function checkScore(raw: unknown, wod: Wod, path: string, errors: string[]): Sco
     rpe = checkNumber(raw.rpe, at('rpe'), errors, 'integer');
     if (rpe !== undefined && rpe > 10) fail(errors, at('rpe'), 'doit être compris entre 1 et 10');
   }
-  const adjustments = raw.adjustments === undefined ? undefined : checkAdjustments(raw.adjustments, wod, at('adjustments'), errors);
+  // Une séance en blocs note ses adaptations dans le score de chaque bloc.
+  const adjustments =
+    raw.adjustments === undefined
+      ? undefined
+      : wod.type === 'session'
+        ? fail(errors, at('adjustments'), 'à noter dans le score de chaque bloc')
+        : checkAdjustments(raw.adjustments, wod, at('adjustments'), errors);
   const common = { rx: raw.rx === true, rpe, notes: optionalText(raw.notes, at('notes'), errors), adjustments };
 
   switch (wod.type) {
+    case 'session': {
+      unknownKeys(raw, [...SCORE_KEYS, 'blocks'], path, errors);
+      let blocks: (SingleScore | null)[] | undefined;
+      if (!Array.isArray(raw.blocks)) fail(errors, at('blocks'), 'doit être une liste de scores, un par bloc');
+      else if (raw.blocks.length !== wod.blocks.length) {
+        fail(errors, at('blocks'), `contient ${raw.blocks.length} scores pour ${wod.blocks.length} blocs`);
+      } else if (raw.blocks.every((item) => item === null)) {
+        fail(errors, at('blocks'), 'au moins un bloc doit être fait');
+      } else {
+        blocks = raw.blocks.map((item, i) => {
+          const block = wod.blocks[i];
+          if (item === null || !block) return null;
+          return (checkScore(item, block, `${at('blocks')}[${i}]`, errors) as SingleScore | undefined) ?? null;
+        });
+      }
+      if (errors.length > before || blocks === undefined) return undefined;
+      return compact<SessionScore>({ blocks, ...common });
+    }
     case 'amrap': {
       unknownKeys(raw, [...SCORE_KEYS, 'rounds', 'extra_reps', 'splits_sec'], path, errors);
       const rounds = checkNumber(raw.rounds, at('rounds'), errors, 'count');

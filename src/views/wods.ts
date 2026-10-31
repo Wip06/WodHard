@@ -31,6 +31,7 @@ import { newClock } from '../timer';
 import type { SavedWod } from '../types';
 import { isDate, parseImport, type Import } from '../validate';
 import { exportData } from './data';
+import { startBlock } from './blocks';
 import { badges, field, pageHead, resultRow, typeBadge, wodSheet } from './parts';
 
 const MAX_ERRORS = 12;
@@ -661,6 +662,8 @@ export function wodDetailView(id: string): View | null {
   const pending = visiblePlan().filter((row) => row.saved.id === id && !row.done);
 
   const start = () => {
+    // Une séance en blocs démarre par son premier bloc ; le chrono enchaînera les suivants.
+    if (wod.type === 'session') return startBlock(id, { wod, index: 0, runs: [] });
     unlockAudio();
     setSession({ stage: 'timer', wod, wod_id: id, clock: newClock(Date.now()), rounds: 0, marks: [] });
     navigate('/timer');

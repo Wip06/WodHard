@@ -100,7 +100,19 @@ export interface StrengthWod extends WodBase {
   exercises: Exercise[];
 }
 
-export type Wod = AmrapWod | EmomWod | ForTimeWod | HyroxWod | StrengthWod;
+/** Un WOD d'un seul format. */
+export type SingleWod = AmrapWod | EmomWod | ForTimeWod | HyroxWod | StrengthWod;
+
+/**
+ * Séance en plusieurs blocs, faits dans l'ordre : par exemple force, puis metcon. Chaque bloc est
+ * un WOD d'un seul format, avec son titre (« Force », « Metcon »).
+ */
+export interface SessionWod extends WodBase {
+  type: 'session';
+  blocks: SingleWod[];
+}
+
+export type Wod = SingleWod | SessionWod;
 export type WodType = Wod['type'];
 
 interface ScoreBase {
@@ -162,7 +174,14 @@ export interface StrengthScore extends ScoreBase {
   duration_sec?: number;
 }
 
-export type Score = AmrapScore | EmomScore | ForTimeScore | HyroxScore | StrengthScore;
+export type SingleScore = AmrapScore | EmomScore | ForTimeScore | HyroxScore | StrengthScore;
+
+/** Séance en blocs : le score de chaque bloc, dans l'ordre ; null pour un bloc passé. */
+export interface SessionScore extends ScoreBase {
+  blocks: (SingleScore | null)[];
+}
+
+export type Score = SingleScore | SessionScore;
 
 export interface SavedWod {
   id: string;

@@ -1,11 +1,13 @@
 import { choose, h, offerFile, toast } from '../dom';
-import { adjustmentText, dateLabel, scoreLine, setsLine } from '../format';
+import { adjustmentText, dateLabel, scoreLine, setsLine, wodHeadline } from '../format';
 import { coachReady, loadCoach } from '../claude';
 import { navigate, type View } from '../router';
 import { isOverCap, lastSplits, scoreDelta } from '../records';
 import { sessionCard, sessionFileName } from '../sessionCard';
 import { sessionImageFile } from '../sessionImage';
+import { scoreHeadline } from '../stats';
 import { currentRecords, deleteResult, findResult, findWod, sameWorkout, sortedActivities, sortedResults } from '../store';
+import type { Result, SingleScore, SingleWod } from '../types';
 import { activityRow, askAdvice, deltaChip, pageHead, resultRow, rxChip, splitsList, wodSheet } from './parts';
 
 /**
@@ -67,7 +69,7 @@ export function resultView(id: string): View | null {
     h(
       'div',
       { class: 'scoreboard' },
-      h('strong', { class: 'score' }, scoreLine(wod, score)),
+      h('strong', { class: 'score' }, scoreHeadline(result)),
       h(
         'span',
         { class: 'result-line' },
@@ -84,37 +86,17 @@ export function resultView(id: string): View | null {
           delta && deltaChip(delta),
         ),
       best && !isRecord && h('p', { class: 'compare' }, `Record : ${scoreLine(best.wod, best.score)}, ${dateLabel(best.date)}`),
-      'exercises' in score &&
-        wod.type === 'strength' &&
-        h(
-          'div',
-          { class: 'adjustments' },
-          h('span', { class: 'field-label' }, 'Séries'),
-          h(
-            'ul',
-            null,
-            wod.exercises.map((exercise, i) =>
-              h('li', null, h('strong', null, exercise.name), ` : ${setsLine(score.exercises[i] ?? [], exercise.load_count)}`),
-            ),
-          ),
-        ),
-      score.adjustments &&
-        score.adjustments.length > 0 &&
-        h(
-          'div',
-          { class: 'adjustments' },
-          h('span', { class: 'field-label' }, 'Adapté'),
-          h(
-            'ul',
-            null,
-            score.adjustments.map((adjustment) => h('li', null, adjustmentText(wod, adjustment))),
-          ),
-        ),
+      wod.type !== 'session' && !('blocks' in score) && scoreDetails(wod, score, lastSplits(earlier)),
       score.notes && h('p', { class: 'description' }, score.notes),
-      'splits_sec' in score &&
-        score.splits_sec !== undefined &&
-        splitsList(wod, score.splits_sec, lastSplits(earlier)),
     ),
+    // Séance en blocs : le score de chaque bloc, avec ses séries, adaptations et temps.
+    wod.type === 'session' &&
+      'blocks' in score &&
+      h(
+        'div',
+        { class: 'stack' },
+        wod.blocks.map((block, i) => blockResult(block, i, score.blocks[i] ?? null, sameWorkout(block))),
+      ),
     wodSheet(wod),
     h(
       'div',
@@ -127,6 +109,64 @@ export function resultView(id: string): View | null {
     ),
   );
   return { el, tab: 'wods' };
+}
+
+/** Séries d'une séance de force, adaptations, et temps par tour ou par segment comparés à `previous`. */
+function scoreDetails(wod: SingleWod, score: SingleScore, previous?: number[]): HTMLElement[] {
+  const parts: HTMLElement[] = [];
+  if ('exercises' in score && wod.type === 'strength') {
+    parts.push(
+      h(
+        'div',
+        { class: 'adjustments' },
+        h('span', { class: 'field-label' }, 'Séries'),
+        h(
+          'ul',
+          null,
+          wod.exercises.map((exercise, i) =>
+            h('li', null, h('strong', null, exercise.name), ` : ${setsLine(score.exercises[i] ?? [], exercise.load_count)}`),
+          ),
+        ),
+      ),
+    );
+  }
+  if (score.adjustments && score.adjustments.length > 0) {
+    parts.push(
+      h(
+        'div',
+        { class: 'adjustments' },
+        h('span', { class: 'field-label' }, 'Adapté'),
+        h(
+          'ul',
+          null,
+          score.adjustments.map((adjustment) => h('li', null, adjustmentText(wod, adjustment))),
+        ),
+      ),
+    );
+  }
+  const splits = 'splits_sec' in score && score.splits_sec !== undefined && splitsList(wod, score.splits_sec, previous);
+  if (splits) parts.push(splits);
+  return parts;
+}
+
+/**
+ * Un bloc d'une séance faite : son score, Rx, puis le détail. Les temps sont comparés aux
+ * séances du même entraînement, faites seules (`others`).
+ */
+function blockResult(block: SingleWod, index: number, score: SingleScore | null, others: Result[]): HTMLElement {
+  return h(
+    'section',
+    { class: 'scoreboard block' },
+    h('h3', { class: 'block-title' }, h('span', { class: 'block-number' }, index + 1), h('span', null, block.title)),
+    h('p', { class: 'summary' }, wodHeadline(block)),
+    score === null
+      ? h('p', { class: 'compare' }, 'Bloc passé')
+      : [
+          h('strong', { class: 'score' }, scoreLine(block, score)),
+          h('span', { class: 'result-line' }, isOverCap(block, score) && h('span', { class: 'chip late' }, 'Hors cap'), rxChip(block, score)),
+          ...scoreDetails(block, score, lastSplits(others)),
+        ],
+  );
 }
 
 /** Séance précédente du même WOD, pour la comparaison. */

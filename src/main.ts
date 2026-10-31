@@ -3,11 +3,12 @@ import { toast } from './dom';
 import { render, startRouter, type View } from './router';
 import { DATA_KEY, getSession, loadData, loadSession } from './store';
 import { activityFormView, activityView } from './views/activity';
+import { nextBlockView } from './views/blocks';
 import { chronoRunView, chronoView } from './views/chrono';
 import { chatView, proposalView } from './views/chat';
 import { coachView } from './views/coach';
 import { dataView } from './views/data';
-import { editorView } from './views/editor';
+import { editorView, sessionEditorView } from './views/editor';
 import { historyView, recapView, resultView } from './views/history';
 import { liftsView, liftView } from './views/lifts';
 import { progressView } from './views/progress';
@@ -24,9 +25,12 @@ const routes: [RegExp, (...params: string[]) => View | null][] = [
   [/^\/chrono\/run$/, chronoRunView],
   [/^\/coach$/, coachView],
   [/^\/edit(?:\/([\w-]+))?$/, (id) => editorView(id)],
+  [/^\/edit\/([\w-]+)\/block\/(\d+)$/, (id, index) => editorView(id, false, Number(index))],
+  [/^\/compose$/, () => sessionEditorView()],
   [/^\/copy\/([\w-]+)$/, (id) => editorView(id, true)],
   [/^\/wod\/([\w-]+)$/, wodDetailView],
   [/^\/timer$/, timerView],
+  [/^\/next$/, nextBlockView],
   [/^\/score(?:\/([\w-]+))?$/, scoreView],
   [/^\/history$/, historyView],
   [/^\/history\/([\w-]+)$/, resultView],

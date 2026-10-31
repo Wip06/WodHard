@@ -2,7 +2,7 @@ import { allMovements } from './movements';
 import { doneCount, plannedCount, volume } from './strength';
 import type { Adjustment, Exercise, Movement, Score, StrengthSet, Wod, WodType } from './types';
 
-const TYPE_LABELS: Record<WodType, string> = { amrap: 'AMRAP', emom: 'EMOM', for_time: 'For Time', hyrox: 'Hyrox', strength: 'Force' };
+const TYPE_LABELS: Record<WodType, string> = { amrap: 'AMRAP', emom: 'EMOM', for_time: 'For Time', hyrox: 'Hyrox', strength: 'Force', session: 'Séance' };
 
 const pad = (n: number) => String(n).padStart(2, '0');
 export const decimal = (n: number, digits = 2) => n.toLocaleString('fr-FR', { maximumFractionDigits: digits });
@@ -70,6 +70,8 @@ export function wodSummary(wod: Wod): string {
     }
     case 'strength':
       return `${plural(wod.exercises.length, 'exercice')} · ${plural(plannedCount(wod), 'série')}`;
+    case 'session':
+      return `${plural(wod.blocks.length, 'bloc')} : ${wod.blocks.map((block) => typeLabel(block.type)).join(' + ')}`;
   }
 }
 
@@ -77,6 +79,16 @@ export function wodSummary(wod: Wod): string {
 export const wodHeadline = (wod: Wod) => (wod.team_size ? `${teamLabel(wod.team_size)} · ${wodSummary(wod)}` : wodSummary(wod));
 
 export function scoreLine(wod: Wod, score: Score): string {
+  if ('blocks' in score) {
+    const blocks = wod.type === 'session' ? wod.blocks : [];
+    return score.blocks
+      .map((done, i) => {
+        const block = blocks[i];
+        const title = block?.title ?? `Bloc ${i + 1}`;
+        return done === null || !block ? `${title} passé` : `${title} ${scoreLine(block, done)}`;
+      })
+      .join(' / ');
+  }
   if ('exercises' in score) {
     const planned = wod.type === 'strength' ? `/${plannedCount(wod)}` : '';
     const lifted = wod.type === 'strength' ? volume(wod, score) : 0;

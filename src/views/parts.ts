@@ -17,11 +17,11 @@ import {
   wodHeadline,
   wodSummary,
 } from '../format';
-import { isRest } from '../movements';
+import { blocksOf, isRest } from '../movements';
 import { beyondPrescribed, isOverCap, splitDeltas, type Delta } from '../records';
 import { activityLine, activityName } from '../sports';
 import { restOf } from '../strength';
-import type { Activity, Exercise, Movement, Result, Wod } from '../types';
+import type { Activity, Exercise, Movement, Result, SingleWod, Wod } from '../types';
 
 export function pageHead(title: string, back?: { href: string; label: string }): HTMLElement {
   return h(
@@ -42,8 +42,12 @@ export function field(label: string, ...controls: (HTMLElement | string)[]): HTM
   );
 }
 
+/** Type du WOD ; pour une séance en blocs, le type de chacun de ses blocs. */
 export function typeBadge(wod: Wod): HTMLElement {
-  return h('span', { class: `badge ${wod.type}` }, typeLabel(wod.type));
+  const types = [...new Set(blocksOf(wod).map((block) => block.type))];
+  const [single] = types;
+  if (types.length === 1 && single) return h('span', { class: `badge ${single}` }, typeLabel(single));
+  return h('span', { class: 'badges' }, types.map((type) => h('span', { class: `badge ${type}` }, typeLabel(type))));
 }
 
 /** Type du WOD, suivi de « Duo » pour un WOD à plusieurs. */
@@ -184,7 +188,33 @@ export function wodPlan(wod: Wod, askable = false): HTMLElement {
         h('p', { class: 'rule' }, 'Exercice après exercice, avec du repos entre les séries :'),
         h('ul', { class: 'movements' }, wod.exercises.map((exercise) => exerciseItem(exercise, askable))),
       );
+    case 'session':
+      return h(
+        'div',
+        { class: 'plan' },
+        h('p', { class: 'rule' }, 'Les blocs s’enchaînent dans l’ordre, le chrono passe de l’un à l’autre :'),
+        wod.blocks.map((block, i) => blockPlan(block, i, askable)),
+      );
   }
+}
+
+/** Un bloc d'une séance : son numéro, son titre, son format, puis son contenu. */
+export function blockPlan(block: SingleWod, index: number, askable = false): HTMLElement {
+  return h(
+    'section',
+    { class: 'block' },
+    h(
+      'h3',
+      { class: 'block-title' },
+      h('span', { class: 'block-number' }, index + 1),
+      h('span', null, block.title),
+      h('span', { class: `badge ${block.type}` }, typeLabel(block.type)),
+    ),
+    h('p', { class: 'summary' }, wodHeadline(block)),
+    block.description && h('p', { class: 'description' }, block.description),
+    block.warmup && h('p', { class: 'note' }, `Échauffement : ${block.warmup}`),
+    wodPlan(block, askable),
+  );
 }
 
 /** Un exercice de force : séries × reps, charge, repos et notes. */
@@ -288,6 +318,12 @@ export function adviceRequest(result: Result): string {
   }
   if (score.adjustments && score.adjustments.length > 0) {
     facts.push(`Adaptations : ${score.adjustments.map((adjustment) => adjustmentText(wod, adjustment)).join(' ; ')}`);
+  }
+  if (wod.type === 'session' && 'blocks' in score) {
+    wod.blocks.forEach((block, i) => {
+      const adjusted = score.blocks[i]?.adjustments ?? [];
+      if (adjusted.length > 0) facts.push(`Adaptations (${block.title}) : ${adjusted.map((adjustment) => adjustmentText(block, adjustment)).join(' ; ')}`);
+    });
   }
   if (score.notes) facts.push(`Mes notes : ${score.notes}`);
   return [

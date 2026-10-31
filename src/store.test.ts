@@ -7,7 +7,9 @@ import {
   buildHistory,
   deleteActivity,
   deleteResult,
+  getSession,
   getWods,
+  loadSession,
   pendingDates,
   planWods,
   previewPlanning,
@@ -17,9 +19,10 @@ import {
   reschedulePlan,
   saveActivity,
   saveResult,
+  setSession,
   visiblePlan,
 } from './store';
-import type { AmrapWod } from './types';
+import type { AmrapWod, SessionWod } from './types';
 
 // Stockage en mémoire : le store n'y touche qu'à l'enregistrement.
 const memory = new Map<string, string>();
@@ -152,5 +155,23 @@ describe('activités d’autres sports', () => {
     deleteActivity('x1');
     deleteActivity('x2');
     expect(buildHistory(30).activities).toBeUndefined();
+  });
+});
+
+describe('séance en blocs en cours', () => {
+  const session: SessionWod = { schema_version: 1, type: 'session', title: 'Double', blocks: [wod('Bloc A'), wod('Bloc B')] };
+
+  it('retrouve, appli rouverte, les blocs faits et le bloc suivant', () => {
+    const run = { rounds: 4, marks: [60_000, 120_000, 180_000, 240_000], elapsedMs: 600_000, completed: true };
+    setSession({ stage: 'next', wod: session, wod_id: 'w1', rounds: 0, marks: [], blocks: { wod: session, index: 1, runs: [run], endedAt: 1000 } });
+    loadSession();
+    expect(getSession()).toEqual({ stage: 'next', wod: session, wod_id: 'w1', rounds: 0, marks: [], blocks: { wod: session, index: 1, runs: [run], endedAt: 1000 } });
+  });
+
+  it('écarte une séance dont les blocs sont illisibles', () => {
+    memory.set('wodhard:session', JSON.stringify({ stage: 'next', wod: session, rounds: 0, marks: [], blocks: { wod: wod('Seul'), index: 0, runs: [] } }));
+    loadSession();
+    expect(getSession()).toBeNull();
+    setSession(null);
   });
 });

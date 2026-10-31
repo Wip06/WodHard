@@ -17,7 +17,7 @@ L'application rejette tout JSON invalide et tout champ qui n'est pas décrit dan
 
 Communs à tous les types :
 - `schema_version` : obligatoire, toujours 1.
-- `type` : obligatoire, "amrap", "emom", "for_time", "hyrox" ou "strength".
+- `type` : obligatoire, "amrap", "emom", "for_time", "hyrox", "strength" ou "session".
 - `title` : obligatoire, texte de 60 caractères maximum.
 - `description` : optionnel, texte (stimulus visé, stratégie).
 - `warmup` : optionnel, texte (échauffement).
@@ -33,6 +33,7 @@ Propres à chaque type, et à lui seul :
   - séries identiques : `sets` est leur nombre (1 à 30), avec exactement un champ parmi `reps` et `duration_sec` (pour un gainage), et `load_kg` facultatif ;
   - séries différentes (pyramide, montée en charge) : `sets` est la liste des séries, chacune `{ "reps": 5, "load_kg": 80 }` (ou avec `duration_sec`), sans `reps`, `duration_sec` ni `load_kg` au niveau de l'exercice ;
   - facultatifs : `rest_sec` (repos après chaque série, en secondes, 90 par défaut), `load_count` (2 pour une paire d'haltères ou de kettlebells, `load_kg` étant alors la charge d'une main) et `notes` (tempo, consignes).
+- "session" : `blocks` obligatoire, de 2 à 8 WOD faits l'un après l'autre dans la même séance (force puis metcon, technique puis AMRAP…). Chaque bloc est un WOD complet d'un des autres types, avec un `title` court (« Force », « Metcon ») ; `schema_version` peut y être omis. Un bloc ne contient jamais d'autres blocs. `description`, `warmup` et `equipment` de la séance valent pour l'ensemble ; chaque bloc peut avoir les siens.
 
 `time_cap_sec` n'existe que dans "for_time" et "hyrox". `duration_sec` au niveau du WOD n'existe que dans "amrap".
 
@@ -58,7 +59,7 @@ Valeurs :
 
 ## Quel type choisir
 - "amrap", "emom", "for_time" : selon le format demandé ou le plus adapté.
-- Travail de force ou de musculation (5×5 back squat, séance haut du corps…) : un "strength", avec les séries, les répétitions, les charges et le repos. Jamais un "for_time" : la force ne se fait pas contre la montre. Pour enchaîner force puis metcon le même jour, écris deux WOD à la même date dans un programme.
+- Travail de force ou de musculation (5×5 back squat, séance haut du corps…) : un "strength", avec les séries, les répétitions, les charges et le repos. Jamais un "for_time" : la force ne se fait pas contre la montre. Pour enchaîner plusieurs parties dans une même séance (force puis metcon), écris un seul "session" dont chaque partie est un bloc : le chrono les enchaîne et tout s'enregistre en une séance.
 - "hyrox" : un enchaînement de segments faits une seule fois, dans l'ordre (course, station, course, station…). Écris chaque segment explicitement, y compris les courses qui se répètent : l'application chronomètre chaque segment séparément.
 
 ## Exemples
@@ -184,6 +185,21 @@ Hyrox :
 }
 ```
 
+Séance en blocs (force, puis metcon) :
+```json
+{
+  "schema_version": 1,
+  "type": "session",
+  "title": "Squat puis metcon",
+  "description": "Force lourde, puis un metcon court et intense.",
+  "warmup": "5 min de rameur, puis montée en charge progressive au back squat.",
+  "blocks": [
+    { "type": "strength", "title": "Force", "exercises": [ { "name": "Back squat", "sets": 5, "reps": 5, "load_kg": 100, "rest_sec": 150 } ] },
+    { "type": "amrap", "title": "Metcon", "duration_sec": 600, "movements": [ { "name": "Wall ball", "reps": 15, "load_kg": 9 }, { "name": "Burpee", "reps": 10 } ] }
+  ]
+}
+```
+
 ## Programme sur plusieurs jours
 Quand je demande plusieurs WOD d'un coup, réponds avec UN SEUL bloc JSON de cette forme, où chaque `wod` est un WOD complet au format ci-dessus :
 
@@ -192,7 +208,7 @@ Quand je demande plusieurs WOD d'un coup, réponds avec UN SEUL bloc JSON de cet
   "wodhard_program": 1,
   "wods": [
     { "date": "2026-10-12", "wod": { "schema_version": 1, "type": "emom", "title": "Lundi force", "interval_sec": 150, "intervals": 5, "slots": [ [ { "name": "Deadlift", "reps": 5, "load_kg": 120 } ] ] } },
-    { "date": "2026-10-12", "wod": { "schema_version": 1, "type": "amrap", "title": "Lundi moteur", "duration_sec": 600, "movements": [ { "name": "Burpee", "reps": 10 }, { "name": "Run", "distance_m": 200 } ] } },
+    { "date": "2026-10-13", "wod": { "schema_version": 1, "type": "amrap", "title": "Mardi moteur", "duration_sec": 600, "movements": [ { "name": "Burpee", "reps": 10 }, { "name": "Run", "distance_m": 200 } ] } },
     { "date": "2026-10-14", "wod": { "schema_version": 1, "type": "for_time", "title": "Mercredi jambes", "time_cap_sec": 900, "rounds": 4, "movements": [ { "name": "Wall ball", "reps": 25, "load_kg": 6 }, { "name": "Run", "distance_m": 400 } ] } }
   ]
 }
@@ -200,7 +216,7 @@ Quand je demande plusieurs WOD d'un coup, réponds avec UN SEUL bloc JSON de cet
 
 - Le programme n'a que deux champs : `wodhard_program` (toujours 1) et `wods` (au moins un élément). Chaque élément n'a que `date` et `wod`.
 - `date` est au format AAAA-MM-JJ : c'est le jour où le WOD est prévu. Aucune entrée pour les jours de repos.
-- Une séance en deux parties (force puis metcon) s'écrit comme deux WOD à la même date, dans l'ordre où je dois les faire.
+- Une séance en plusieurs parties (force puis metcon) s'écrit comme un seul WOD "session" à sa date, pas comme deux WOD à la même date.
 - Si je ne donne pas de date de début, commence demain.
 - `date` est optionnel : omets-le seulement si je demande plusieurs WOD sans les planifier.
 
@@ -211,6 +227,7 @@ Je peux coller un JSON commençant par `"wodhard_history"`. Dans `entries`, chaq
 - for_time : `time_sec` si `finished` est true, sinon `reps_completed` au time cap
 - hyrox : `time_sec` si `finished` est true, sinon `segments_completed`
 - strength : `exercises`, les séries réellement faites, une liste par exercice du WOD et dans le même ordre (`reps` ou `duration_sec`, et `load_kg`) ; `duration_sec` est la durée de la séance.
+- session : `blocks`, le score de chaque bloc dans l'ordre, au format de son type, ou `null` pour un bloc que j'ai passé. `rx` (tous les blocs faits en Rx), `rpe` et `notes` valent pour toute la séance ; les `adjustments` sont dans le score de chaque bloc.
 - for_time et hyrox : un `time_sec` supérieur à `time_cap_sec` veut dire que j'ai continué après le cap pour finir. Compte-le comme un résultat hors cap, donc une séance trop longue pour moi.
 - partout : `rx` (fait tel que prescrit), `rpe` (1 à 10), `notes`
 - `splits_sec`, quand il est présent : les temps relevés au chrono, en secondes et dans l'ordre. Un par tour terminé pour amrap et for_time, un par segment terminé pour hyrox. Il montre où j'accélère et où je ralentis.

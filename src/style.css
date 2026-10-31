@@ -319,6 +319,10 @@ a {
   --tone: var(--strength);
 }
 
+.badge.session {
+  --tone: var(--text);
+}
+
 .badge.team {
   --tone: var(--good);
 }
@@ -688,6 +692,105 @@ body:has(.select-bar:not([hidden])) .toast {
 .scoreboard .score {
   font-size: 2rem;
   line-height: 1.1;
+}
+
+/* Séance en blocs : chaque bloc numéroté, avec son format puis son contenu. */
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plan .block + .block {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.block .plan {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.block-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.block-title .badge {
+  margin-left: auto;
+}
+
+.block-number {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.8em;
+  height: 1.8em;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.block > .summary,
+.block-score > .summary {
+  margin: 0;
+}
+
+.scoreboard.block {
+  border-color: var(--line);
+}
+
+.scoreboard.block .score {
+  font-size: 1.4rem;
+}
+
+.blocks-editor {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Saisie d'une séance en blocs : un cadre par bloc. */
+.block-score {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/* Entre deux blocs : la pause qui court. */
+.pause-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--emom) 45%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--emom) 12%, var(--surface));
+  text-align: center;
+}
+
+.pause-label {
+  color: var(--emom);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.pause-clock {
+  color: var(--emom);
+  font-size: 2.6rem;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Formulaires */
@@ -2055,11 +2158,12 @@ textarea {
   color: var(--muted);
 }
 
+/* Les champs rétrécissent un peu dans un cadre étroit (un bloc d'une séance), sans déborder. */
 .set-row input {
-  flex: none;
-  width: 4.6em;
+  flex: 0 1 4.6em;
+  min-width: 3.4em;
   min-height: 44px;
-  padding: 8px;
+  padding: 8px 4px;
 }
 
 /* Champs de charge en texte (pour accepter la virgule) : même allure que les champs numériques. */
@@ -2072,8 +2176,10 @@ textarea {
 }
 
 .set-label {
-  min-width: 4.2em;
+  flex: 0 1 4.2em;
+  min-width: 0;
   font-size: 0.9rem;
+  white-space: nowrap;
 }
 
 .set-row .btn.icon {

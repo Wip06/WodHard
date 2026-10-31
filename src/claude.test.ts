@@ -169,7 +169,7 @@ describe('format fourni au coach', () => {
   it('ne contient que des exemples acceptés par l’appli', () => {
     expect(COACH_FORMAT.startsWith("# Règles de l'application WODHARD")).toBe(true);
     const blocks = [...COACH_FORMAT.matchAll(/```json\n([\s\S]*?)```/g)].map((match) => match[1] ?? '');
-    expect(blocks).toHaveLength(8);
+    expect(blocks).toHaveLength(9);
     for (const block of blocks) expect(parseImport(block)).toMatchObject({ ok: true });
   });
 

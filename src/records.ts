@@ -34,6 +34,8 @@ export function workKey(wod: Wod): string {
       return JSON.stringify(['for_time', team, wod.rounds, wod.rep_scheme, wod.movements.map(work)]);
     case 'hyrox':
       return JSON.stringify(['hyrox', team, wod.segments.map(work)]);
+    case 'session':
+      return JSON.stringify(['session', team, wod.blocks.map(workKey)]);
     case 'strength':
       return JSON.stringify([
         'strength',
@@ -86,6 +88,14 @@ export const scalesDown = (wod: Wod, adjustments: Adjustment[] = []) =>
  */
 export function beyondPrescribed(wod: Wod, score: Score): boolean {
   if (!score.rx) return false;
+  // Séance en blocs : Rx partout, et au moins un bloc au-delà du prescrit.
+  if ('blocks' in score) {
+    if (wod.type !== 'session') return false;
+    return score.blocks.some((done, i) => {
+      const block = wod.blocks[i];
+      return done !== null && block !== undefined && beyondPrescribed(block, done);
+    });
+  }
   if ('exercises' in score) {
     if (wod.type !== 'strength' || !asPrescribed(wod, score)) return false;
     return wod.exercises.some((exercise, i) => {
@@ -148,6 +158,7 @@ export function isOverCap(wod: Wod, score: Score): boolean {
 /** Critères de classement, du plus important au moins important ; plus grand = meilleur. */
 function rank(score: Score, wod?: Wod): number[] {
   const rx = score.rx ? 1 : 0;
+  if ('blocks' in score) return [rx];
   if ('exercises' in score) return [rx, liftedVolume(score, wod), score.exercises.reduce((sum, sets) => sum + sets.length, 0)];
   if ('rounds' in score) return [rx, score.rounds, score.extra_reps];
   if ('intervals_completed' in score) return [rx, score.intervals_completed];
@@ -177,6 +188,8 @@ export function compareScores(a: Score, b: Score, wods?: [Wod, Wod]): number {
 export function recordIds(chronological: Result[]): Set<string> {
   const groups = new Map<string, Result[]>();
   for (const result of chronological) {
+    // Une séance en blocs n'a pas de score unique à comparer.
+    if (result.wod.type === 'session') continue;
     const key = workKey(result.wod);
     groups.set(key, [...(groups.get(key) ?? []), result]);
   }

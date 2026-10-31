@@ -7,6 +7,7 @@ import { navigate, type View } from '../router';
 import { setSession, sortedResults, type Session, type StrengthProgress } from '../store';
 import { plannedSets, restOf } from '../strength';
 import { elapsedMs, type Clock } from '../timer';
+import { blockStep, endRun } from './blocks';
 import type { StrengthSet, StrengthWod } from '../types';
 import { screenWake } from '../wake';
 
@@ -29,7 +30,7 @@ type TimerSession = Extract<Session, { stage: 'timer' }>;
  * enregistré à chaque série : rien n'est perdu si l'appli se ferme.
  */
 export function strengthTimerView(initial: TimerSession, wod: StrengthWod): View {
-  const { wod_id } = initial;
+  const { wod_id, blocks } = initial;
   // Pas de décompte de départ : une séance de force démarre à la première série.
   let clock: Clock = initial.strength ? initial.clock : { accumMs: 0, resumedAt: Date.now() };
   const progress: StrengthProgress = initial.strength ?? { done: wod.exercises.map(() => []), exercise: 0, restUntil: null };
@@ -41,7 +42,7 @@ export function strengthTimerView(initial: TimerSession, wod: StrengthWod): View
   let workUntil: number | null = null;
   let lastTick = Date.now();
 
-  const save = () => setSession({ stage: 'timer', wod, wod_id, clock, rounds: 0, marks: [], strength: progress });
+  const save = () => setSession({ stage: 'timer', wod, wod_id, clock, rounds: 0, marks: [], strength: progress, ...(blocks && { blocks }) });
   const exercise = () => wod.exercises[progress.exercise] ?? wod.exercises[0]!;
   const planned = () => plannedSets(exercise());
   const done = () => progress.done[progress.exercise] ?? [];
@@ -74,7 +75,7 @@ export function strengthTimerView(initial: TimerSession, wod: StrengthWod): View
   const el = h(
     'section',
     { class: 'timer strength' },
-    h('header', { class: 'timer-head' }, h('strong', null, wod.title), h('span', null, wodHeadline(wod), ' · ', elapsedEl)),
+    h('header', { class: 'timer-head' }, h('strong', null, wod.title), h('span', null, blocks ? `${blockStep(blocks)} · ` : '', wodHeadline(wod), ' · ', elapsedEl)),
     tabs,
     h('div', { class: 'timer-face' }, phaseEl, bigEl, subEl),
     card,
@@ -207,7 +208,7 @@ export function strengthTimerView(initial: TimerSession, wod: StrengthWod): View
     // Bouton principal : valider la série, ou passer à la suite une fois les séries faites.
     if (exerciseDone()) {
       const next = nextExercise();
-      primary.textContent = next === undefined ? 'Terminer et noter la séance' : 'Exercice suivant';
+      primary.textContent = next !== undefined ? 'Exercice suivant' : blocks ? 'Terminer ce bloc' : 'Terminer et noter la séance';
       primary.onclick = () => (next === undefined ? void finish(true) : goTo(next));
     } else if (draft.duration_sec !== undefined && !work) {
       primary.textContent = `Lancer la série (${clockText(draft.duration_sec)})`;
@@ -302,18 +303,17 @@ export function strengthTimerView(initial: TimerSession, wod: StrengthWod): View
     paint();
   }
 
-  /** Arrête le chrono et passe à la saisie du score, avec les séries notées. */
+  /** Arrête le chrono et passe à la saisie du score (ou au bloc suivant d'une séance), avec les séries notées. */
   function finish(completed: boolean): void {
     const at = Math.max(0, elapsedMs(clock, Date.now()));
-    setSession({ stage: 'score', wod, wod_id, rounds: 0, marks: [], strength: progress, elapsedMs: at, completed });
-    navigate('/score', true);
+    endRun({ wod, wod_id, blocks }, { rounds: 0, marks: [], strength: progress, elapsedMs: at, completed });
   }
 
   async function stop(): Promise<void> {
-    const answer = await choose('Arrêter la séance ?', 'Les séries faites sont gardées pour la saisie du score.', [
-      { label: 'Saisir mon score', value: 'score', kind: 'primary' },
-      { label: 'Abandonner sans enregistrer', value: 'discard', kind: 'danger' },
-      { label: 'Continuer la séance', value: 'continue' },
+    const answer = await choose(blocks ? 'Arrêter ce bloc ?' : 'Arrêter la séance ?', 'Les séries faites sont gardées pour la saisie du score.', [
+      { label: blocks ? 'Terminer ce bloc' : 'Saisir mon score', value: 'score', kind: 'primary' },
+      { label: blocks ? 'Abandonner la séance' : 'Abandonner sans enregistrer', value: 'discard', kind: 'danger' },
+      { label: blocks ? 'Continuer le bloc' : 'Continuer la séance', value: 'continue' },
     ]);
     if (answer === 'score') finish(allDone());
     else if (answer === 'discard') {

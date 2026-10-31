@@ -1,9 +1,9 @@
 import { h, toast } from '../dom';
-import { decimal, teamLabel, typeLabel } from '../format';
+import { decimal, teamLabel, typeLabel, wodHeadline } from '../format';
 import { DEFAULT_REST_SEC } from '../strength';
 import { navigate, type View } from '../router';
-import { addWod, findWod, updateWod } from '../store';
-import type { Exercise, Movement, Wod, WodType } from '../types';
+import { addWod, findWod, getWods, updateWod } from '../store';
+import type { Exercise, Movement, SessionWod, SingleWod } from '../types';
 import { validateWod } from '../validate';
 import { field, pageHead } from './parts';
 
@@ -36,7 +36,8 @@ interface ExerciseDraft {
 
 /** État du formulaire. Les champs de tous les types cohabitent : changer de type ne perd rien. */
 interface Draft {
-  type: WodType;
+  /** Une séance en blocs ne passe pas par ce formulaire : elle se compose sur sa propre page. */
+  type: SingleWod['type'];
   title: string;
   description: string;
   warmup: string;
@@ -57,7 +58,7 @@ interface Draft {
   exercises: ExerciseDraft[];
 }
 
-const TYPES: WodType[] = ['amrap', 'emom', 'for_time', 'hyrox', 'strength'];
+const TYPES: SingleWod['type'][] = ['amrap', 'emom', 'for_time', 'hyrox', 'strength'];
 const UNITS: { value: Unit; label: string }[] = [
   { value: 'reps', label: 'reps' },
   { value: 'distance_m', label: 'mètres' },
@@ -67,6 +68,7 @@ const UNITS: { value: Unit; label: string }[] = [
 
 const FIELD_LABELS: Record<string, string> = {
   title: 'Titre',
+  blocks: 'Blocs',
   description: 'Description',
   warmup: 'Échauffement',
   equipment: 'Matériel',
@@ -182,7 +184,7 @@ function exerciseRaw(e: ExerciseDraft): Record<string, unknown> {
   return { ...common, sets: number(e.sets), [e.unit]: number(e.amount), load_kg: number(e.load) };
 }
 
-function draftOf(wod?: Wod): Draft {
+function draftOf(wod?: SingleWod): Draft {
   const draft: Draft = {
     type: wod?.type ?? 'amrap',
     title: wod?.title ?? '',
@@ -289,6 +291,7 @@ function humanize(error: string): string {
   if (rest.length === 0) return error;
   let message = rest.join(' : ');
   const slots = /^(\d+) slots pour seulement (\d+) intervalles$/.exec(message);
+  const blockCount = /^doit contenir de (\d+) à (\d+) blocs/.exec(message);
   if (message === 'champ manquant' || message === 'doit être un texte non vide') message = 'à remplir';
   else if (message.startsWith('il faut exactement un champ')) message = 'quantité à remplir';
   else if (message.startsWith('au plus un champ')) message = 'une seule quantité';
@@ -296,6 +299,7 @@ function humanize(error: string): string {
   else if (message === 'doit contenir au moins un mouvement') message = 'ajoutes-en au moins un';
   else if (message === 'aucun mouvement dans les slots') message = 'ajoute au moins un mouvement';
   else if (slots) message = `${slots[1]} intervalles décrits pour un total de ${slots[2]}`;
+  else if (blockCount) message = `ajoute de ${blockCount[1]} à ${blockCount[2]} WOD`;
 
   const exercise = /^exercises\[(\d+)\](?:\.(\w+))?(?:\[(\d+)\])?/.exec(path);
   if (exercise) {
@@ -343,14 +347,20 @@ const numeric = (label: string, placeholder = ''): InputAttrs => ({
 
 /**
  * Formulaire d'un WOD : création, modification de `id`, ou avec `copy` création d'un nouveau WOD
- * pré-rempli à partir de `id`. L'original et ses séances ne sont alors pas touchés.
+ * pré-rempli à partir de `id`. L'original et ses séances ne sont alors pas touchés. Avec
+ * `blockIndex`, c'est un bloc de la séance `id` qui se modifie.
  */
-export function editorView(id?: string, copy = false): View | null {
+export function editorView(id?: string, copy = false, blockIndex?: number): View | null {
   const source = id === undefined ? undefined : findWod(id);
   if (id !== undefined && !source) return null;
+  const sourceWod = source?.wod;
+  if (sourceWod?.type === 'session' && blockIndex === undefined) return sessionEditorView(id, copy);
+  const start = sourceWod?.type === 'session' ? sourceWod.blocks[blockIndex ?? -1] : sourceWod;
+  if (blockIndex !== undefined && (sourceWod?.type !== 'session' || !start)) return null;
+  const session = sourceWod?.type === 'session' ? sourceWod : undefined;
   const editing = copy ? undefined : source;
-  const draft = draftOf(source?.wod);
-  if (copy && source) draft.title = copyTitle(source.wod.title);
+  const draft = draftOf(start);
+  if (copy && start) draft.title = copyTitle(start.title);
 
   const typeEl = h('div', { class: 'stack' });
   const listsEl = h('div', { class: 'stack' });
@@ -658,7 +668,14 @@ export function editorView(id?: string, copy = false): View | null {
       errorBox.scrollIntoView({ block: 'nearest' });
       return;
     }
-    if (editing) {
+    const value = checked.value;
+    if (session && editing && blockIndex !== undefined) {
+      // Un bloc modifié retourne dans sa séance, à sa place.
+      if (value.type === 'session') return;
+      updateWod(editing.id, { ...session, blocks: session.blocks.map((block, i) => (i === blockIndex ? value : block)) });
+      toast('Bloc modifié');
+      navigate(`/edit/${editing.id}`, true);
+    } else if (editing) {
       updateWod(editing.id, checked.value);
       toast('WOD modifié');
       navigate(`/wod/${editing.id}`, true);
@@ -672,12 +689,13 @@ export function editorView(id?: string, copy = false): View | null {
   renderType();
   renderLists();
 
-  const back = source ? `#/wod/${source.id}` : '#/';
-  const heading = copy ? 'Dupliquer le WOD' : editing ? 'Modifier le WOD' : 'Créer un WOD';
+  const back = session && source ? `#/edit/${source.id}` : source ? `#/wod/${source.id}` : '#/';
+  const heading = session ? 'Modifier le bloc' : copy ? 'Dupliquer le WOD' : editing ? 'Modifier le WOD' : 'Créer un WOD';
   const el = h(
     'section',
     { class: 'page' },
-    pageHead(heading, { href: back, label: source ? 'Retour' : 'WOD' }),
+    pageHead(heading, { href: back, label: session ? 'Séance' : source ? 'Retour' : 'WOD' }),
+    !source && h('p', { class: 'hint left' }, 'Plusieurs WOD à enchaîner (force puis metcon) ? ', h('a', { href: '#/compose' }, 'Compose une séance en blocs'), '.'),
     h(
       'form',
       { class: 'form', novalidate: true, onsubmit: submit },
@@ -692,6 +710,167 @@ export function editorView(id?: string, copy = false): View | null {
         'Matériel (facultatif, séparé par des virgules)',
         bind(draft, 'equipment', { placeholder: 'Kettlebell, Rower', 'aria-label': 'Matériel' }),
       ),
+      errorBox,
+      h('button', { type: 'submit', class: 'btn primary big block' }, 'Enregistrer'),
+      h('a', { class: 'btn ghost block', href: back }, 'Annuler'),
+    ),
+  );
+  return { el, tab: 'wods' };
+}
+
+/** Brouillon d'une séance en blocs : ses blocs sont des WOD déjà complets. */
+interface SessionDraft {
+  title: string;
+  description: string;
+  warmup: string;
+  blocks: SingleWod[];
+}
+
+/**
+ * Séance en blocs : un titre et des blocs dans l'ordre, pris parmi ses WOD. Chaque bloc se modifie
+ * ensuite avec le formulaire d'un WOD. Création, modification de `id`, ou copie avec `copy`.
+ */
+export function sessionEditorView(id?: string, copy = false): View | null {
+  const source = id === undefined ? undefined : findWod(id);
+  if (id !== undefined && source?.wod.type !== 'session') return null;
+  const start = source?.wod.type === 'session' ? source.wod : undefined;
+  const editing = copy ? undefined : source;
+  const draft: SessionDraft = {
+    title: start ? (copy ? copyTitle(start.title) : start.title) : '',
+    description: start?.description ?? '',
+    warmup: start?.warmup ?? '',
+    blocks: [...(start?.blocks ?? [])],
+  };
+  const blocksEl = h('ol', { class: 'stack blocks-editor' });
+  const errorBox = h('div', { class: 'errors', role: 'alert', hidden: true });
+  // Les WOD qui peuvent devenir un bloc : tous, sauf les séances en blocs.
+  const choices = getWods().filter((saved) => saved.wod.type !== 'session');
+  const picker = h(
+    'select',
+    { 'aria-label': 'WOD à ajouter' },
+    h('option', { value: '' }, 'Choisir un de mes WOD…'),
+    choices.map((saved) => h('option', { value: saved.id }, `${saved.wod.title} · ${typeLabel(saved.wod.type)}`)),
+  );
+
+  const raw = (): Record<string, unknown> => ({
+    ...start,
+    schema_version: 1,
+    type: 'session',
+    title: draft.title,
+    description: draft.description.trim() === '' ? undefined : draft.description,
+    warmup: draft.warmup.trim() === '' ? undefined : draft.warmup,
+    blocks: draft.blocks,
+  });
+
+  /** Valide le brouillon ; les erreurs s'affichent et rien n'est renvoyé s'il en reste. */
+  const checked = (): SessionWod | null => {
+    const result = validateWod(raw());
+    if (result.ok && result.value.type === 'session') {
+      errorBox.hidden = true;
+      return result.value;
+    }
+    const errors = result.ok ? [] : result.errors;
+    errorBox.replaceChildren(
+      h('strong', null, 'À corriger :'),
+      h(
+        'ul',
+        null,
+        errors.map((error) => {
+          // Erreur dans un bloc : « Bloc 2 · Mouvement 1 (nom) : à remplir ».
+          const block = /^blocks\[(\d+)\]\.(.*)$/.exec(error);
+          return h('li', null, block ? `Bloc ${Number(block[1]) + 1} · ${humanize(block[2] ?? '')}` : humanize(error));
+        }),
+      ),
+    );
+    errorBox.hidden = false;
+    errorBox.scrollIntoView({ block: 'nearest' });
+    return null;
+  };
+
+  /** Enregistre la séance, puis va à `next` (la fiche de la séance par défaut). */
+  const save = (next?: (savedId: string) => string) => {
+    const wod = checked();
+    if (!wod) return;
+    if (editing) {
+      updateWod(editing.id, wod);
+      toast('Séance modifiée');
+      navigate(next ? next(editing.id) : `/wod/${editing.id}`, true);
+    } else {
+      const { saved, duplicate } = addWod(wod);
+      toast(duplicate ? 'Cette séance était déjà enregistrée' : 'Séance créée');
+      navigate(next ? next(saved.id) : `/wod/${saved.id}`, true);
+    }
+  };
+
+  function renderBlocks(): void {
+    const move = (index: number, delta: number) => {
+      const [block] = draft.blocks.splice(index, 1);
+      if (block) draft.blocks.splice(index + delta, 0, block);
+      renderBlocks();
+    };
+    const icon = (label: string, symbol: string, disabled: boolean, onclick: () => void) =>
+      h('button', { type: 'button', class: 'btn icon', 'aria-label': label, disabled, onclick }, symbol);
+    blocksEl.replaceChildren(
+      ...draft.blocks.map((block, i) =>
+        h(
+          'li',
+          { class: 'editor-card' },
+          h(
+            'div',
+            { class: 'editor-head' },
+            h('span', null, `Bloc ${i + 1}`),
+            h(
+              'span',
+              { class: 'row' },
+              icon('Monter ce bloc', '↑', i === 0, () => move(i, -1)),
+              icon('Descendre ce bloc', '↓', i === draft.blocks.length - 1, () => move(i, 1)),
+              icon('Retirer ce bloc', '✕', false, () => {
+                draft.blocks.splice(i, 1);
+                renderBlocks();
+              }),
+            ),
+          ),
+          h('div', { class: 'block-title' }, h('strong', null, block.title), h('span', { class: `badge ${block.type}` }, typeLabel(block.type))),
+          h('span', { class: 'summary' }, wodHeadline(block)),
+          // Le bloc se modifie avec le formulaire d'un WOD : la séance est d'abord enregistrée telle quelle.
+          h('button', { type: 'button', class: 'btn block', onclick: () => save((savedId) => `/edit/${savedId}/block/${i}`) }, 'Modifier ce bloc'),
+        ),
+      ),
+    );
+    if (draft.blocks.length === 0) blocksEl.append(h('li', { class: 'hint left' }, 'Aucun bloc pour l’instant : ajoute tes WOD dans l’ordre où tu les feras.'));
+  }
+
+  const addBlock = () => {
+    const saved = choices.find((choice) => choice.id === picker.value);
+    if (!saved || saved.wod.type === 'session') return toast('Choisis un WOD à ajouter');
+    draft.blocks.push(saved.wod);
+    picker.value = '';
+    renderBlocks();
+  };
+
+  const submit = (event: Event) => {
+    event.preventDefault();
+    save();
+  };
+
+  renderBlocks();
+  const back = source ? `#/wod/${source.id}` : '#/edit';
+  const heading = copy ? 'Dupliquer la séance' : editing ? 'Modifier la séance' : 'Séance en blocs';
+  const el = h(
+    'section',
+    { class: 'page' },
+    pageHead(heading, { href: back, label: source ? 'Retour' : 'WOD' }),
+    h('p', { class: 'lead' }, 'Les blocs s’enchaînent dans l’ordre : le chrono passe de l’un à l’autre, et tout s’enregistre en une seule séance.'),
+    h(
+      'form',
+      { class: 'form', novalidate: true, onsubmit: submit },
+      field('Titre', bind(draft, 'title', { maxlength: String(TITLE_MAX), 'aria-label': 'Titre' })),
+      h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Blocs'), blocksEl),
+      choices.length > 0
+        ? h('div', { class: 'row' }, picker, h('button', { type: 'button', class: 'btn', onclick: addBlock }, 'Ajouter'))
+        : h('p', { class: 'hint left' }, 'Crée d’abord les WOD à enchaîner : ils deviendront les blocs de la séance.'),
+      field('Description (facultatif)', bindArea(draft, 'description', 'Description')),
+      field('Échauffement (facultatif)', bindArea(draft, 'warmup', 'Échauffement')),
       errorBox,
       h('button', { type: 'submit', class: 'btn primary big block' }, 'Enregistrer'),
       h('a', { class: 'btn ghost block', href: back }, 'Annuler'),

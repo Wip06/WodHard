@@ -1,4 +1,4 @@
-import type { Exercise, Movement, Wod } from './types';
+import type { Exercise, Movement, SingleWod, Wod } from './types';
 
 /** Un exercice de force vu comme un mouvement : sa première série et sa charge la plus lourde. */
 function exerciseMovement(exercise: Exercise): Movement {
@@ -13,9 +13,14 @@ function exerciseMovement(exercise: Exercise): Movement {
   return movement;
 }
 
+/** Les WOD d'une séance en blocs, dans l'ordre ; un WOD d'un seul format est son propre bloc. */
+export const blocksOf = (wod: Wod): SingleWod[] => (wod.type === 'session' ? wod.blocks : [wod]);
+
 /** Tous les mouvements d'un WOD dans l'ordre : c'est la numérotation des adaptations (`index`). */
 export function allMovements(wod: Wod): Movement[] {
   switch (wod.type) {
+    case 'session':
+      return wod.blocks.flatMap(allMovements);
     case 'emom':
       return wod.slots.flat();
     case 'hyrox':
@@ -188,7 +193,7 @@ export function knownNames(wods: Iterable<Wod>): KnownNames {
     for (const movement of allMovements(wod)) {
       if (!movements.has(nameKey(movement.name))) movements.set(nameKey(movement.name), movement.name);
     }
-    for (const item of wod.equipment ?? []) {
+    for (const item of [wod, ...blocksOf(wod)].flatMap((part) => part.equipment ?? [])) {
       if (!equipment.has(nameKey(item))) equipment.set(nameKey(item), item);
     }
   }
@@ -200,9 +205,18 @@ export function knownNames(wods: Iterable<Wod>): KnownNames {
  * enregistré « Rowing », pour que l'historique et les records le retrouvent sous un seul nom.
  */
 export function normalizeWod(wod: Wod, known?: KnownNames): Wod {
-  const fix = (movement: Movement): Movement => ({ ...movement, name: canonicalName(movement.name, known?.movements) });
+  if (wod.type !== 'session') return normalizeSingle(wod, known);
+  return { ...withEquipment(wod, known), blocks: wod.blocks.map((block) => normalizeSingle(block, known)) };
+}
+
+function withEquipment<T extends Wod>(wod: T, known?: KnownNames): T {
   const equipment = wod.equipment && [...new Set(wod.equipment.map((item) => canonicalEquipment(item, known?.equipment)))];
-  const base = equipment ? { ...wod, equipment } : wod;
+  return equipment ? { ...wod, equipment } : wod;
+}
+
+function normalizeSingle(wod: SingleWod, known?: KnownNames): SingleWod {
+  const fix = (movement: Movement): Movement => ({ ...movement, name: canonicalName(movement.name, known?.movements) });
+  const base = withEquipment(wod, known);
   switch (base.type) {
     case 'emom':
       return { ...base, slots: base.slots.map((slot) => slot.map(fix)) };

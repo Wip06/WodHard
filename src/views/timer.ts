@@ -8,6 +8,7 @@ import { getSession, setSession } from '../store';
 import { cuesBetween, elapsedMs, frame, pause, resume, totalMs, type Frame } from '../timer';
 import type { Movement } from '../types';
 import { screenWake } from '../wake';
+import { blockStep, endRun } from './blocks';
 import { movementList } from './parts';
 import { strengthTimerView } from './strengthTimer';
 
@@ -27,8 +28,10 @@ export function timerView(): View | null {
   if (!initial || initial.stage !== 'timer') return null;
   // Une séance de force a son propre chrono, série par série.
   if (initial.wod.type === 'strength') return strengthTimerView(initial, initial.wod);
+  // Une séance en blocs se chronomètre bloc par bloc : `wod` est alors le bloc en cours.
+  if (initial.wod.type === 'session') return null;
   const wod = initial.wod;
-  const { wod_id } = initial;
+  const { wod_id, blocks } = initial;
   let clock = initial.clock;
   let rounds = initial.rounds;
   const marks = [...initial.marks];
@@ -41,7 +44,7 @@ export function timerView(): View | null {
   /** AMRAP et EMOM s'arrêtent avec leur durée ; For Time et Hyrox continuent après le cap. */
   const endsAtTotal = wod.type === 'amrap' || wod.type === 'emom';
   const now = () => elapsedMs(clock, Date.now());
-  const save = () => setSession({ stage: 'timer', wod, wod_id, clock, rounds, marks });
+  const save = () => setSession({ stage: 'timer', wod, wod_id, clock, rounds, marks, ...(blocks && { blocks }) });
   /** Segment en cours (le dernier reste affiché une fois tous terminés). */
   const segmentIndex = () => Math.min(marks.length, segments.length - 1);
   /**
@@ -90,13 +93,14 @@ export function timerView(): View | null {
     h('button', { class: 'btn grow', onclick: () => void stop() }, 'Arrêter'),
   );
   // AMRAP et EMOM, une fois le temps écoulé : le score est déjà acquis, pas besoin de confirmer.
-  const scoreBtn = h('button', { class: 'btn primary big block', onclick: () => finish(true) }, 'Finish');
-  const discardBtn = h('button', { class: 'btn ghost block', onclick: discard }, 'Ne pas enregistrer');
+  const lastBlock = !blocks || blocks.index >= blocks.wod.blocks.length - 1;
+  const scoreBtn = h('button', { class: 'btn primary big block', onclick: () => finish(true) }, lastBlock ? 'Finish' : 'Bloc suivant');
+  const discardBtn = h('button', { class: 'btn ghost block', onclick: discard }, blocks ? 'Abandonner la séance' : 'Ne pas enregistrer');
 
   const el = h(
     'section',
     { class: 'timer' },
-    h('header', { class: 'timer-head' }, h('strong', null, wod.title), h('span', null, wodHeadline(wod))),
+    h('header', { class: 'timer-head' }, h('strong', null, wod.title), h('span', null, blocks ? `${blockStep(blocks)} · ${wodHeadline(wod)}` : wodHeadline(wod))),
     h('div', { class: 'timer-face' }, phaseEl, clockEl, subEl),
     restBox,
     planEl,
@@ -338,22 +342,25 @@ export function timerView(): View | null {
    */
   async function confirmFinish(): Promise<void> {
     const at = now();
-    const confirmed = await choose('Terminer la séance ?', 'Le chrono s’arrête et tu passes à la saisie du score.', [
-      { label: 'Terminer', value: true, kind: 'primary' },
-      { label: 'Continuer', value: false },
-    ]);
+    const confirmed = await choose(
+      blocks ? 'Terminer ce bloc ?' : 'Terminer la séance ?',
+      blocks ? 'Le chrono de ce bloc s’arrête.' : 'Le chrono s’arrête et tu passes à la saisie du score.',
+      [
+        { label: 'Terminer', value: true, kind: 'primary' },
+        { label: 'Continuer', value: false },
+      ],
+    );
     if (!confirmed) return;
     if (stepped) marks.push(at);
     celebrate(CELEBRATION_SCREENS);
     finish(true, at);
   }
 
-  /** Fige le chrono et passe à la saisie du score. */
+  /** Fige le chrono et passe à la saisie du score (ou au bloc suivant d'une séance). */
   function finish(completed: boolean, at = now()): void {
     // AMRAP et EMOM : le score est celui de la fin du temps. For Time et Hyrox : le temps réel, même hors cap.
     const frozen = Math.max(endsAtTotal ? Math.min(at, total) : at, 0);
-    setSession({ stage: 'score', wod, wod_id, rounds, marks, elapsedMs: frozen, completed });
-    navigate('/score', true);
+    endRun({ wod, wod_id, blocks }, { rounds, marks, elapsedMs: frozen, completed });
   }
 
   function discard(): void {
@@ -362,10 +369,10 @@ export function timerView(): View | null {
   }
 
   async function stop(): Promise<void> {
-    const answer = await choose('Arrêter le WOD ?', 'Le chrono continue de tourner tant que tu n’as pas choisi.', [
-      { label: 'Saisir mon score', value: 'score', kind: 'primary' },
-      { label: 'Abandonner sans enregistrer', value: 'discard', kind: 'danger' },
-      { label: 'Continuer le WOD', value: 'continue' },
+    const answer = await choose(blocks ? 'Arrêter ce bloc ?' : 'Arrêter le WOD ?', 'Le chrono continue de tourner tant que tu n’as pas choisi.', [
+      { label: blocks ? 'Terminer ce bloc' : 'Saisir mon score', value: 'score', kind: 'primary' },
+      { label: blocks ? 'Abandonner la séance' : 'Abandonner sans enregistrer', value: 'discard', kind: 'danger' },
+      { label: blocks ? 'Continuer le bloc' : 'Continuer le WOD', value: 'continue' },
     ]);
     if (answer === 'score') finish(false);
     else if (answer === 'discard') discard();

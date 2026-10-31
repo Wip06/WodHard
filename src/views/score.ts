@@ -1,6 +1,6 @@
 import { choose, h, toast } from '../dom';
 import { celebrate } from '../fireworks';
-import { clock, exerciseSummary, movementText, setText, today, wodSummary } from '../format';
+import { clock, exerciseSummary, movementText, setText, today, wodHeadline, wodSummary } from '../format';
 import { recordsBeaten } from '../lifts';
 import { coachReady, loadCoach } from '../claude';
 import { allMovements, isRest } from '../movements';
@@ -16,10 +16,10 @@ import {
   saveResult,
   setSession,
   sortedResults,
-  type Session,
+  type Run,
 } from '../store';
 import { splitsFromMarks } from '../timer';
-import type { Adjustment, Movement, Result, Score, StrengthSet, StrengthWod, Wod } from '../types';
+import type { Adjustment, Movement, Result, Score, SingleWod, StrengthSet, StrengthWod, Wod } from '../types';
 import { isDate, validateScore } from '../validate';
 import { askAdvice, badges, field, pageHead, splitsList, wodPlan } from './parts';
 
@@ -44,12 +44,19 @@ interface Draft {
 
 interface Context {
   wod: Wod;
-  draft: Draft;
+  /** Un brouillon par bloc d'une séance en blocs (null : bloc passé) ; sinon un seul. */
+  drafts: (Draft | null)[];
+  /** RPE et notes de toute la séance. */
+  common: { rpe?: number; notes?: string };
   editing?: Result;
   wodId?: string;
 }
 
+/** Rien de relevé au chrono : le score se saisit à la main. */
+const NO_RUN: Run = { rounds: 0, marks: [], completed: false };
+
 const FIELD_LABELS: Record<string, string> = {
+  blocks: 'Blocs',
   rounds: 'Tours complets',
   extra_reps: 'Reps en plus',
   intervals_completed: 'Intervalles tenus',
@@ -61,12 +68,13 @@ const FIELD_LABELS: Record<string, string> = {
   notes: 'Notes',
 };
 
-function draftFromSession(session: Extract<Session, { stage: 'score' }>): Draft {
-  const { wod, elapsedMs, completed, rounds, marks } = session;
+/** Score pré-rempli avec ce qu'a donné le chrono. */
+function draftFromRun(wod: SingleWod, run: Run): Draft {
+  const { elapsedMs, completed, rounds, marks } = run;
   const draft: Draft = { rx: true };
   if (wod.type === 'strength') {
     // Séries notées au chrono ; sans chrono, les séries prévues, à corriger au besoin.
-    const exercises = session.strength?.done ?? wod.exercises.map((exercise) => plannedSets(exercise).map((set) => ({ ...set })));
+    const exercises = run.strength?.done ?? wod.exercises.map((exercise) => plannedSets(exercise).map((set) => ({ ...set })));
     return {
       rx: asPrescribed(wod, { exercises, rx: true }),
       exercises,
@@ -111,11 +119,24 @@ function draftFromSession(session: Extract<Session, { stage: 'score' }>): Draft 
 function context(resultId?: string): Context | null {
   if (resultId) {
     const editing = findResult(resultId);
-    return editing ? { wod: editing.wod, draft: { ...editing.score }, editing } : null;
+    if (!editing) return null;
+    const { score } = editing;
+    const common = { rpe: score.rpe, notes: score.notes };
+    const drafts = 'blocks' in score ? score.blocks.map((done) => (done === null ? null : { ...done })) : [{ ...score }];
+    return { wod: editing.wod, drafts, common, editing };
   }
   const session = getSession();
   if (!session || session.stage !== 'score') return null;
-  return { wod: session.wod, draft: draftFromSession(session), wodId: session.wod_id };
+  const { wod } = session;
+  if (wod.type !== 'session') return { wod, drafts: [draftFromRun(wod, session)], common: {}, wodId: session.wod_id };
+  // Séance en blocs : chaque bloc reprend son chrono ; un bloc passé (ou pas atteint) reste à null.
+  const runs = session.blocks?.runs;
+  const drafts = wod.blocks.map((block, i) => {
+    if (!runs) return draftFromRun(block, NO_RUN);
+    const run = runs[i];
+    return run ? draftFromRun(block, run) : null;
+  });
+  return { wod, drafts, common: {}, wodId: session.wod_id };
 }
 
 function numberInput(value: number | undefined, label: string, max?: number): HTMLInputElement {
@@ -356,11 +377,11 @@ function adjustmentsEditor(wod: Wod, initial: Adjustment[], onChange: () => void
   return { el, read: () => rows.map((row) => row.read()).filter((adjustment) => adjustment !== null) };
 }
 
-export function scoreView(resultId?: string): View | null {
-  const found = context(resultId);
-  if (!found) return null;
-  const { wod, draft, editing, wodId } = found;
-
+/**
+ * Champs du score d'un WOD d'un seul format : ceux de son type, les adaptations et Rx. `read`
+ * renvoie le score brut, Rx compris. `compare` : les temps relevés sont comparés à la dernière fois.
+ */
+function scoreFields(wod: SingleWod, draft: Draft, compare: boolean, rxLabel: string) {
   // Champs propres au type de WOD ; `read` renvoie leur valeur au format du score.
   let read: () => Record<string, unknown>;
   const typeFields: (HTMLElement | false)[] = [];
@@ -373,7 +394,7 @@ export function scoreView(resultId?: string): View | null {
       'div',
       { class: 'field' },
       h('span', { class: 'field-label' }, label),
-      splitsList(wod, splits, editing ? undefined : lastSplits(sameWorkout(wod))),
+      splitsList(wod, splits, compare ? lastSplits(sameWorkout(wod)) : undefined),
     );
 
   const rx = h('input', { type: 'checkbox', checked: draft.rx });
@@ -494,7 +515,68 @@ export function scoreView(resultId?: string): View | null {
     const directions = adjustments.read().map((adjustment) => adjustmentDirection(wod, adjustment));
     if (directions.includes('down') || directions.includes('replaced')) rx.checked = false;
   });
-  let rpe = draft.rpe;
+
+  const els = [...typeFields, wod.type !== 'strength' && adjustments.el, h('label', { class: 'check' }, rx, h('span', null, rxLabel))];
+  return {
+    els,
+    read(): Record<string, unknown> {
+      const done = wod.type === 'strength' ? [] : adjustments.read();
+      // Faire moins que prescrit passe en scaled ; faire plus garde le Rx (et donne le Rx+).
+      const raw: Record<string, unknown> = { ...read(), rx: rx.checked && !scalesDown(wod, done) };
+      if (done.length > 0) raw.adjustments = done;
+      return raw;
+    },
+  };
+}
+
+/** Un bloc d'une séance : fait (avec son score) ou passé. */
+function blockFields(block: SingleWod, index: number, draft: Draft | null, compare: boolean) {
+  const fields = scoreFields(block, draft ?? draftFromRun(block, NO_RUN), compare, 'Rx sur ce bloc (Rx+ si tu as fait plus)');
+  const body = h('div', { class: 'stack' }, fields.els);
+  let skipped = draft === null;
+  const doneBtn = h('button', { type: 'button', class: 'btn grow', onclick: () => setSkipped(false) }, 'Fait');
+  const skipBtn = h('button', { type: 'button', class: 'btn grow', onclick: () => setSkipped(true) }, 'Passé');
+  const setSkipped = (value: boolean) => {
+    skipped = value;
+    doneBtn.setAttribute('aria-pressed', String(!value));
+    skipBtn.setAttribute('aria-pressed', String(value));
+    body.hidden = value;
+  };
+  setSkipped(skipped);
+  const el = h(
+    'section',
+    { class: 'block-score', role: 'group', 'aria-label': `Bloc ${index + 1} : ${block.title}` },
+    h('h3', { class: 'block-title' }, h('span', { class: 'block-number' }, index + 1), h('span', null, block.title)),
+    h('p', { class: 'summary' }, wodHeadline(block)),
+    h('div', { class: 'segmented' }, doneBtn, skipBtn),
+    body,
+  );
+  return { el, read: () => (skipped ? null : fields.read()) };
+}
+
+export function scoreView(resultId?: string): View | null {
+  const found = context(resultId);
+  if (!found) return null;
+  const { wod, drafts, common, editing, wodId } = found;
+
+  // Score brut : celui du WOD, ou, pour une séance en blocs, un score par bloc.
+  let fieldEls: (HTMLElement | false)[];
+  let readScore: () => Record<string, unknown>;
+  if (wod.type === 'session') {
+    const blocks = wod.blocks.map((block, i) => blockFields(block, i, drafts[i] ?? null, !editing));
+    fieldEls = blocks.map((block) => block.el);
+    readScore = () => {
+      const scores = blocks.map((block) => block.read());
+      // Rx pour la séance : tous les blocs faits, chacun en Rx.
+      return { blocks: scores, rx: scores.every((score) => score !== null && score.rx === true) };
+    };
+  } else {
+    const fields = scoreFields(wod, drafts[0] ?? draftFromRun(wod, NO_RUN), !editing, 'Rx : tout le prescrit, sans scaling (Rx+ si tu as fait plus)');
+    fieldEls = fields.els;
+    readScore = fields.read;
+  }
+
+  let rpe = common.rpe;
   const rpeButtons = Array.from({ length: 10 }, (_, i) => i + 1).map((value) =>
     h(
       'button',
@@ -511,18 +593,23 @@ export function scoreView(resultId?: string): View | null {
     ),
   );
   const notes = h('textarea', { rows: 3, 'aria-label': 'Notes', placeholder: 'Sensations, scaling utilisé…' });
-  notes.value = draft.notes ?? '';
+  notes.value = common.notes ?? '';
   const date = h('input', { type: 'date', value: editing?.date ?? today(), max: today(), 'aria-label': 'Date' });
   const errorBox = h('div', { class: 'errors', role: 'alert', hidden: true });
 
   const setPath = /^exercises\[(\d+)\]\[(\d+)\]/;
+  const blockPath = /^blocks\[(\d+)\]\.?/;
   const showErrors = (errors: string[]) => {
     errorBox.replaceChildren(
       h(
         'ul',
         null,
         errors.map((error) => {
-          const [key = '', ...rest] = error.split(' : ');
+          const [path = '', ...rest] = error.split(' : ');
+          // Erreur dans un bloc : elle est précédée du titre du bloc.
+          const block = blockPath.exec(path);
+          const blockTitle = block && wod.type === 'session' ? (wod.blocks[Number(block[1])]?.title ?? `Bloc ${Number(block[1]) + 1}`) : null;
+          const key = block ? path.slice(block[0].length) : path;
           const adjusted = /^adjustments\[(\d+)\]/.exec(key);
           const set = setPath.exec(key);
           const label = adjusted
@@ -530,7 +617,8 @@ export function scoreView(resultId?: string): View | null {
             : set
               ? `Exercice ${Number(set[1]) + 1}, série ${Number(set[2]) + 1}`
               : (FIELD_LABELS[key] ?? key);
-          return h('li', null, rest.length > 0 ? `${label} : ${rest.join(' : ')}` : error);
+          const text = rest.length > 0 ? `${label} : ${rest.join(' : ')}` : error;
+          return h('li', null, blockTitle ? `${blockTitle} · ${text}` : text);
         }),
       ),
     );
@@ -540,10 +628,7 @@ export function scoreView(resultId?: string): View | null {
 
   const submit = (event: Event) => {
     event.preventDefault();
-    const done = wod.type === 'strength' ? [] : adjustments.read();
-    // Faire moins que prescrit passe en scaled ; faire plus garde le Rx (et donne le Rx+).
-    const raw: Record<string, unknown> = { ...read(), rx: rx.checked && !scalesDown(wod, done) };
-    if (done.length > 0) raw.adjustments = done;
+    const raw = readScore();
     if (rpe !== undefined) raw.rpe = rpe;
     if (notes.value.trim() !== '') raw.notes = notes.value;
 
@@ -602,13 +687,11 @@ export function scoreView(resultId?: string): View | null {
     h(
       'form',
       { class: 'form', novalidate: true, onsubmit: submit },
-      typeFields,
-      wod.type !== 'strength' && adjustments.el,
-      h('label', { class: 'check' }, rx, h('span', null, 'Rx : tout le prescrit, sans scaling (Rx+ si tu as fait plus)')),
+      fieldEls,
       h(
         'div',
         { class: 'field' },
-        h('span', { class: 'field-label' }, 'RPE : effort ressenti de 1 à 10 (facultatif)'),
+        h('span', { class: 'field-label' }, wod.type === 'session' ? 'RPE de la séance : effort ressenti de 1 à 10 (facultatif)' : 'RPE : effort ressenti de 1 à 10 (facultatif)'),
         h('div', { class: 'rpe' }, rpeButtons),
       ),
       h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notes (facultatif)'), notes),

@@ -1,6 +1,6 @@
 import { canonicalName, nameKey } from './movements';
 import { oneRepMax } from './strength';
-import type { Result, StrengthSet } from './types';
+import type { Result, StrengthScore, StrengthSet, StrengthWod } from './types';
 
 /** Un exercice tel qu'il a été fait lors d'une séance. */
 export interface LiftSession {
@@ -29,6 +29,16 @@ export interface Lift {
   longestHold?: { seconds: number; date: string };
 }
 
+/** Les parties de force d'une séance : le WOD lui-même, ou ses blocs de force. */
+function strengthParts({ wod, score }: Result): [StrengthWod, StrengthScore][] {
+  if (wod.type === 'strength' && 'exercises' in score) return [[wod, score]];
+  if (wod.type !== 'session' || !('blocks' in score)) return [];
+  return wod.blocks.flatMap((block, i): [StrengthWod, StrengthScore][] => {
+    const done = score.blocks[i];
+    return block.type === 'strength' && done && 'exercises' in done ? [[block, done]] : [];
+  });
+}
+
 const sessionMax = (sets: StrengthSet[]) => {
   const values = sets.flatMap((set) => {
     const max = oneRepMax(set);
@@ -38,7 +48,7 @@ const sessionMax = (sets: StrengthSet[]) => {
 };
 
 /**
- * Charges et records de chaque exercice, tirés des séances de force. `results` va de la plus récente
+ * Charges et records de chaque exercice, tirés des séances de force (et des blocs de force des séances en blocs). `results` va de la plus récente
  * à la plus ancienne, comme `sortedResults` : deux séances du même jour restent ainsi dans l'ordre
  * où elles ont été faites. Les variantes d'un nom (« développé couché », « Bench press ») sont
  * regroupées. Les exercices les plus récemment faits viennent en premier.
@@ -47,10 +57,10 @@ export function liftsOf(results: Result[]): Lift[] {
   const lifts = new Map<string, Lift>();
   // Tri stable : à date égale, l'ordre inverse de `results` (donc chronologique) est gardé.
   const chronological = [...results].reverse().sort((a, b) => a.date.localeCompare(b.date));
-  for (const result of chronological) {
-    if (result.wod.type !== 'strength' || !('exercises' in result.score)) continue;
-    const done = result.score.exercises;
-    result.wod.exercises.forEach((exercise, i) => {
+  const parts = chronological.flatMap((result) => strengthParts(result).map(([wod, score]) => ({ result, wod, score })));
+  for (const { result, wod, score } of parts) {
+    const done = score.exercises;
+    wod.exercises.forEach((exercise, i) => {
       const sets = done[i] ?? [];
       if (sets.length === 0) return;
       const name = canonicalName(exercise.name);

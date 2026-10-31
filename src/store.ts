@@ -4,7 +4,7 @@ import { liftsOf } from './lifts';
 import { knownNames, normalizeWod } from './movements';
 import { recordIds, workKey } from './records';
 import type { Clock } from './timer';
-import type { Activity, AppData, Backup, HistoryExport, PlanEntry, ProgramItem, Result, SavedWod, StrengthSet, Wod } from './types';
+import type { Activity, AppData, Backup, HistoryExport, PlanEntry, ProgramItem, Result, SavedWod, SessionWod, SingleWod, StrengthSet, Wod } from './types';
 import { isDate, isObj, validateBackup, validateWod } from './validate';
 
 export const DATA_KEY = 'wodhard:data';
@@ -30,15 +30,38 @@ export interface StrengthProgress {
   restUntil: number | null;
 }
 
-interface SessionBase {
-  wod: Wod;
-  wod_id?: string;
+/** Ce qu'un WOD a donné au chrono, de quoi pré-remplir son score. */
+export interface Run {
   /** Tours complets comptés pendant un AMRAP ou un For Time. */
   rounds: number;
   /** Temps de passage (ms depuis le départ) à la fin de chaque tour ou segment validé au chrono. */
   marks: number[];
   /** Séance de force : séries notées au chrono. */
   strength?: StrengthProgress;
+  /** Temps au chrono à l'arrêt ; absent quand le score est saisi sans chrono. */
+  elapsedMs?: number;
+  /** For Time et Hyrox : fini avant le time cap. AMRAP et EMOM : chrono allé au bout. */
+  completed: boolean;
+}
+
+/** Séance en blocs en cours : les blocs déjà faits, et celui en cours (ou le suivant, entre deux blocs). */
+export interface BlocksProgress {
+  wod: SessionWod;
+  index: number;
+  /** Un par bloc terminé, dans l'ordre ; null pour un bloc passé. */
+  runs: (Run | null)[];
+  /** Entre deux blocs : fin du bloc précédent (Date.now()), pour afficher la pause. */
+  endedAt?: number;
+}
+
+interface SessionBase {
+  /** Au chrono d'une séance en blocs : le bloc en cours. Sinon, le WOD entier. */
+  wod: Wod;
+  wod_id?: string;
+  rounds: number;
+  marks: number[];
+  strength?: StrengthProgress;
+  blocks?: BlocksProgress;
 }
 
 /**
@@ -47,13 +70,9 @@ interface SessionBase {
  */
 export type Session =
   | (SessionBase & { stage: 'timer'; clock: Clock })
-  | (SessionBase & {
-      stage: 'score';
-      /** Temps au chrono à l'arrêt ; absent quand le score est saisi sans chrono. */
-      elapsedMs?: number;
-      /** For Time et Hyrox : fini avant le time cap. AMRAP et EMOM : chrono allé au bout. */
-      completed: boolean;
-    });
+  /** Séance en blocs, entre deux blocs : `blocks.index` est le bloc suivant. */
+  | (SessionBase & { stage: 'next'; blocks: BlocksProgress })
+  | (SessionBase & Pick<Run, 'elapsedMs' | 'completed'> & { stage: 'score' });
 
 /** Une ligne du programme, avec son WOD et, si elle est faite, la séance correspondante. */
 export interface PlannedWod {
@@ -482,6 +501,30 @@ export function setSession(next: Session | null): void {
 }
 
 const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+const readMarks = (raw: unknown): number[] => (Array.isArray(raw) && raw.every((mark) => typeof mark === 'number') ? raw : []);
+
+/** Relit ce qu'a donné un bloc terminé ; un bloc passé (ou illisible) vaut null. */
+function readRun(raw: unknown, wod: SingleWod): Run | null {
+  if (!isObj(raw)) return null;
+  const strength = readStrength(raw.strength, wod);
+  return {
+    rounds: isCount(raw.rounds) ? Math.floor(raw.rounds) : 0,
+    marks: readMarks(raw.marks),
+    completed: raw.completed === true,
+    ...(typeof raw.elapsedMs === 'number' && { elapsedMs: raw.elapsedMs }),
+    ...(strength && { strength }),
+  };
+}
+
+function readBlocks(raw: unknown): BlocksProgress | undefined {
+  if (!isObj(raw) || !Array.isArray(raw.runs)) return undefined;
+  const checked = validateWod(raw.wod);
+  if (!checked.ok || checked.value.type !== 'session') return undefined;
+  const wod = checked.value;
+  const runs = raw.runs.slice(0, wod.blocks.length).map((run, i) => readRun(run, wod.blocks[i]!));
+  const index = isCount(raw.index) ? Math.min(Math.floor(raw.index), wod.blocks.length - 1) : Math.min(runs.length, wod.blocks.length - 1);
+  return { wod, index, runs, ...(typeof raw.endedAt === 'number' && { endedAt: raw.endedAt }) };
+}
 
 /** Relit la progression d'une séance de force enregistrée ; ce qui ne colle pas au WOD est écarté. */
 function readStrength(raw: unknown, wod: Wod): StrengthProgress | undefined {
@@ -504,15 +547,17 @@ function readSession(raw: unknown): Session | null {
   const wod = validateWod(raw.wod);
   const rounds = raw.rounds;
   if (!wod.ok || typeof rounds !== 'number' || !Number.isInteger(rounds) || rounds < 0) return null;
-  const marks: number[] =
-    Array.isArray(raw.marks) && raw.marks.every((mark) => typeof mark === 'number') ? raw.marks : [];
+  const marks = readMarks(raw.marks);
   const strength = readStrength(raw.strength, wod.value);
+  const blocks = raw.blocks === undefined ? undefined : readBlocks(raw.blocks);
+  if (raw.blocks !== undefined && !blocks) return null;
   const base = {
     wod: wod.value,
     rounds,
     marks,
     ...(typeof raw.wod_id === 'string' && { wod_id: raw.wod_id }),
     ...(strength && { strength }),
+    ...(blocks && { blocks }),
   };
 
   if (raw.stage === 'timer') {
@@ -521,6 +566,7 @@ function readSession(raw: unknown): Session | null {
     if (clock.resumedAt !== null && typeof clock.resumedAt !== 'number') return null;
     return { stage: 'timer', ...base, clock: { accumMs: clock.accumMs, resumedAt: clock.resumedAt } };
   }
+  if (raw.stage === 'next') return blocks ? { stage: 'next', ...base, blocks } : null;
   if (raw.stage === 'score') {
     const elapsed = typeof raw.elapsedMs === 'number' ? { elapsedMs: raw.elapsedMs } : {};
     return { stage: 'score', ...base, ...elapsed, completed: raw.completed === true };
