@@ -187,6 +187,8 @@ export interface SavedWod {
   id: string;
   added_at: string;
   wod: Wod;
+  /** WOD de référence (Fran, Cindy, un test maison) : à refaire toutes les tant de semaines pour mesurer sa progression. */
+  reference_weeks?: number;
 }
 
 /** Une séance faite. Le WOD est copié : supprimer un WOD ne touche pas l'historique. */
@@ -249,6 +251,19 @@ export interface HistoryExport {
   activities?: Omit<Activity, 'id'>[];
   /** Charges de référence par exercice de force, pour prescrire les charges. */
   lifts?: LiftSummary[];
+  /** WOD de référence, à refaire régulièrement. */
+  references?: ReferenceSummary[];
+}
+
+/** Un WOD de référence, envoyé au coach : quand le refaire, et ce qu'il a donné. */
+export interface ReferenceSummary {
+  wod: Wod;
+  retest_weeks: number;
+  /** Dernière fois et meilleur score ; absents s'il n'a jamais été fait. */
+  last?: { date: string; score: Score };
+  best?: { date: string; score: Score };
+  /** Date à partir de laquelle le refaire. */
+  due_on?: string;
 }
 
 /** Repères d'un exercice de force, envoyés au coach. */

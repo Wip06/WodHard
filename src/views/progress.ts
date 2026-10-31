@@ -4,8 +4,10 @@ import { coachReady, loadCoach } from '../claude';
 import { render, type View } from '../router';
 import { distanceText, SPORT_INFO } from '../sports';
 import { dashboard, DEFAULT_RPE, STREAK_MIN, type Dashboard, type Family } from '../stats';
-import { currentRecords, findWod, getPlan, sortedActivities, sortedResults } from '../store';
+import { currentRecords, findWod, getPlan, references, sortedActivities, sortedResults } from '../store';
+import { workKey } from '../records';
 import { liftsBlock } from './lifts';
+import { referencesBlock, referencesSummary } from './references';
 import { openChat, pageHead } from './parts';
 
 const PERIODS = [
@@ -182,13 +184,16 @@ function mixBlock(d: Dashboard): HTMLElement | false {
 }
 
 function repeatedBlock(d: Dashboard): HTMLElement | false {
-  if (d.repeated.length === 0) return false;
+  // Les références ont leur propre bloc.
+  const referenceKeys = new Set(references().map((reference) => workKey(reference.saved.wod)));
+  const repeated = d.repeated.filter((item) => !referenceKeys.has(workKey(item.last.wod)));
+  if (repeated.length === 0) return false;
   return block(
     'Tes WOD refaits',
     h(
       'ul',
       { class: 'repeats' },
-      d.repeated.map((item) => {
+      repeated.map((item) => {
         const href = item.wodId && findWod(item.wodId) ? `#/wod/${item.wodId}` : `#/history/${item.last.id}`;
         const trend = item.trend > 0 ? '▲' : item.trend < 0 ? '▼' : '=';
         return h(
@@ -286,6 +291,8 @@ function summary(d: Dashboard, since: string): string {
   if (d.repeated.length > 0) {
     lines.push(`- WOD refaits : ${d.repeated.map((item) => `${item.title} ${scoreLine(item.first.wod, item.first.score)} → ${scoreLine(item.last.wod, item.last.score)} (${item.count} fois)`).join(' ; ')}.`);
   }
+  const refs = referencesSummary();
+  if (refs) lines.push(refs);
   if (d.hyrox?.runPace !== undefined) {
     const before = d.hyrox.previousRunPace === undefined ? '' : ` (${clock(Math.round(d.hyrox.previousRunPace))} /km la période d’avant)`;
     const station = d.hyrox.slowest ? `, station la plus longue : ${d.hyrox.slowest.name}` : '';
@@ -346,6 +353,7 @@ export function progressView(): View {
     heatmapBlock(d),
     loadBlock(d),
     mixBlock(d),
+    referencesBlock(),
     repeatedBlock(d),
     hyroxBlock(d),
     liftsBlock(),

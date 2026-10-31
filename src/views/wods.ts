@@ -2,6 +2,7 @@ import { unlockAudio } from '../audio';
 import { choose, h, toast } from '../dom';
 import { addDays, dateLabel, dayLabel, daysBetween, plural, scoreLine, today, wodHeadline, wodSummary } from '../format';
 import { navigate, render, type View } from '../router';
+import { agoText, canBeReference, type Reference } from '../references';
 import { matchesQuery, searchText } from '../search';
 import {
   addPlan,
@@ -20,7 +21,9 @@ import {
   removePlanEntries,
   removeWods,
   reschedulePlan,
+  references,
   resultsFor,
+  sameWorkout,
   setSession,
   sortedResults,
   snoozeBackup,
@@ -33,6 +36,7 @@ import { isDate, parseImport, type Import } from '../validate';
 import { exportData } from './data';
 import { startBlock } from './blocks';
 import { badges, field, pageHead, resultRow, typeBadge, wodSheet } from './parts';
+import { progressionChart, referenceChip, referenceSection } from './references';
 
 const MAX_ERRORS = 12;
 
@@ -47,7 +51,13 @@ function wodCardContent(saved: SavedWod): Content {
   const done = resultsFor(saved.id);
   const last = done[0];
   return [
-    h('span', { class: 'card-top' }, badges(saved.wod), !!last && h('span', { class: 'chip rx' }, '✓ Fait')),
+    h(
+      'span',
+      { class: 'card-top' },
+      badges(saved.wod),
+      saved.reference_weeks !== undefined && canBeReference(saved) && referenceChip(),
+      !!last && h('span', { class: 'chip rx' }, '✓ Fait'),
+    ),
     h('strong', { class: 'card-title' }, saved.wod.title),
     h('span', { class: 'card-sub' }, wodSummary(saved.wod)),
     !!last &&
@@ -55,6 +65,22 @@ function wodCardContent(saved: SavedWod): Content {
         'span',
         { class: 'card-meta' },
         `Fait ${done.length}× · dernier : ${scoreLine(last.wod, last.score)}, ${dateLabel(last.date)}`,
+      ),
+  ];
+}
+
+/** WOD de référence dont le délai est écoulé : quand il a été fait, et son record. */
+function redoCardContent({ saved, last, best, results }: Reference): Content {
+  return [
+    h('span', { class: 'card-top' }, badges(saved.wod), h('span', { class: 'chip due' }, 'À refaire')),
+    h('strong', { class: 'card-title' }, saved.wod.title),
+    h('span', { class: 'card-sub' }, wodSummary(saved.wod)),
+    !!last &&
+      h(
+        'span',
+        { class: 'card-meta' },
+        `Dernière fois ${agoText(last.date, today())} : ${scoreLine(last.wod, last.score)}`,
+        best && results.length > 1 ? ` · record ${scoreLine(best.wod, best.score)}` : '',
       ),
   ];
 }
@@ -276,8 +302,11 @@ export function wodListView(): View {
     if (result.wod_id !== undefined && !recency.has(result.wod_id)) recency.set(result.wod_id, rank);
   });
   const others = library.filter((saved) => !recency.has(saved.id));
+  // Références dont le délai est écoulé : elles remontent de « Déjà faits » à « À refaire ».
+  const toRedo = references().filter((reference) => reference.due && !planned.has(reference.saved.id) && recency.has(reference.saved.id));
+  const redoIds = new Set(toRedo.map((reference) => reference.saved.id));
   const finished = library
-    .filter((saved) => recency.has(saved.id))
+    .filter((saved) => recency.has(saved.id) && !redoIds.has(saved.id))
     .sort((a, b) => (recency.get(a.id) ?? 0) - (recency.get(b.id) ?? 0));
   const backup = backupStatus();
   const index = new Map(getWods().map((saved) => [saved.id, searchText(saved.wod)]));
@@ -289,7 +318,7 @@ export function wodListView(): View {
   const entryIds = () => [...selected].filter((key) => key.startsWith('plan:')).map((key) => key.slice(5));
   /** WOD sélectionnés hors du programme, sans date à venir, dans l'ordre de la liste. */
   const unplannedIds = () =>
-    [...others, ...finished].filter((saved) => selected.has(`wod:${saved.id}`)).map((saved) => saved.id);
+    [...toRedo.map((reference) => reference.saved), ...others, ...finished].filter((saved) => selected.has(`wod:${saved.id}`)).map((saved) => saved.id);
   const wodIds = () => {
     const ids = new Set([...selected].filter((key) => key.startsWith('wod:')).map((key) => key.slice(4)));
     for (const id of entryIds()) {
@@ -371,12 +400,17 @@ export function wodListView(): View {
   function renderLists(): void {
     const found = (id: string) => matchesQuery(query, index.get(id) ?? '');
     const planFound = plan.filter((row) => found(row.saved.id));
+    const redoFound = toRedo.filter((reference) => found(reference.saved.id));
     const othersFound = others.filter((saved) => found(saved.id));
     const finishedFound = finished.filter((saved) => found(saved.id));
     // Une recherche déplie « Déjà faits » pour montrer tout ce qui correspond.
     const searching = query.trim() !== '';
     let shown = doneOpen || searching;
-    const openKeys = [...planFound.map((row) => `plan:${row.entry.id}`), ...othersFound.map((saved) => `wod:${saved.id}`)];
+    const openKeys = [
+      ...planFound.map((row) => `plan:${row.entry.id}`),
+      ...redoFound.map((reference) => `wod:${reference.saved.id}`),
+      ...othersFound.map((saved) => `wod:${saved.id}`),
+    ];
     const doneKeys = finishedFound.map((saved) => `wod:${saved.id}`);
     visibleKeys = shown ? [...openKeys, ...doneKeys] : openKeys;
 
@@ -413,6 +447,14 @@ export function wodListView(): View {
             ),
           ),
         ],
+        redoFound.length > 0 && [
+          h('h2', { class: 'section-title' }, 'À refaire'),
+          h(
+            'ul',
+            { class: 'cards' },
+            redoFound.map((reference) => card(`wod:${reference.saved.id}`, `#/wod/${reference.saved.id}`, 'due', redoCardContent(reference))),
+          ),
+        ],
         othersFound.length > 0 && [
           h('h2', { class: 'section-title' }, 'À faire'),
           h(
@@ -422,10 +464,10 @@ export function wodListView(): View {
           ),
         ],
         !searching &&
-          planFound.length + othersFound.length === 0 &&
+          planFound.length + redoFound.length + othersFound.length === 0 &&
           h('p', { class: 'empty' }, 'Tout est fait ! Demande un nouveau WOD au coach, ou refais un WOD déjà fait.'),
         finishedFound.length > 0 && doneSection,
-        searching && planFound.length + othersFound.length + finishedFound.length === 0 && [
+        searching && planFound.length + redoFound.length + othersFound.length + finishedFound.length === 0 && [
           h('p', { class: 'empty' }, `Aucun WOD ne correspond à « ${query.trim()} ».`),
           h(
             'button',
@@ -728,11 +770,14 @@ export function wodDetailView(id: string): View | null {
       ),
       h('div', { class: 'row' }, planDate, h('button', { class: 'btn', onclick: plan }, 'Planifier')),
     ),
+    referenceSection(saved, render),
     past.length > 0 &&
       h(
         'section',
         { class: 'stack' },
         h('h2', { class: 'section-title' }, 'Mes résultats'),
+        // Toutes les séances du même entraînement, y compris d'une copie de ce WOD.
+        progressionChart(sameWorkout(wod)),
         h(
           'ul',
           { class: 'cards' },

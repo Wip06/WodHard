@@ -50,6 +50,8 @@ const MAX_EXERCISES = 30;
 /** Blocs d'une séance : au moins deux (un seul bloc, c'est un WOD de son format). */
 const MIN_BLOCKS = 2;
 const MAX_BLOCKS = 8;
+/** Délai maximal pour refaire un WOD de référence, en semaines. */
+const REFERENCE_MAX_WEEKS = 52;
 const TITLE_MAX = 60;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^[\w-]{1,64}$/;
@@ -560,7 +562,15 @@ function checkSavedWod(raw: unknown, path: string, errors: string[]): SavedWod |
   const id = checkId(raw.id, join(path, 'id'), errors);
   const added_at = checkText(raw.added_at, join(path, 'added_at'), errors);
   const wod = checkWod(raw.wod, join(path, 'wod'), errors);
-  return id !== undefined && added_at !== undefined && wod ? { id, added_at, wod } : undefined;
+  let reference_weeks: number | undefined;
+  if (raw.reference_weeks !== undefined) {
+    reference_weeks = checkNumber(raw.reference_weeks, join(path, 'reference_weeks'), errors, 'integer');
+    if (reference_weeks !== undefined && reference_weeks > REFERENCE_MAX_WEEKS) {
+      reference_weeks = fail(errors, join(path, 'reference_weeks'), `doit être compris entre 1 et ${REFERENCE_MAX_WEEKS}`);
+    }
+  }
+  if (id === undefined || added_at === undefined || !wod) return undefined;
+  return reference_weeks === undefined ? { id, added_at, wod } : { id, added_at, wod, reference_weeks };
 }
 
 function checkResult(raw: unknown, path: string, errors: string[]): Result | undefined {

@@ -240,6 +240,8 @@ Il peut aussi contenir `activities` : mes séances d'autres sports, saisies à l
 
 Il peut aussi contenir `lifts` : mes repères de force, exercice par exercice. `one_rep_max_kg` est mon 1RM estimé (formule d'Epley), `best_set` la série qui le donne, `last` les séries de ma dernière séance. Sers-t'en pour prescrire les charges en kg : par exemple 70 à 80 % du 1RM estimé pour des séries de 5 à 8. Quand j'ai fait toutes les séries prévues, ou plus, monte la charge de 2,5 à 5 kg la fois suivante.
 
+Il peut aussi contenir `references` : mes WOD de référence (Fran, Cindy, un test maison…), à refaire régulièrement pour mesurer ma progression. Chacun a son `wod`, `retest_weeks` (le délai entre deux tests, en semaines), et selon les cas `last` et `best` (date et score de la dernière fois et du record) et `due_on` (date à partir de laquelle le refaire). Quand une référence arrive à `due_on`, place-la dans mon programme un jour où je serai frais (pas le lendemain d'une grosse séance), en recopiant son `wod` à l'identique : modifié, il ne se comparerait plus aux fois précédentes.
+
 Ce que j'attends selon ce qui accompagne l'historique :
 - Historique seul, sans autre texte : donne mon prochain WOD, un seul, en JSON.
 - Historique avec une demande de WOD ou de programme : réponds à cette demande, dans le format JSON correspondant.

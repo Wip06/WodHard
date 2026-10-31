@@ -14,11 +14,13 @@ import {
   planWods,
   previewPlanning,
   previewReschedule,
+  references,
   removePlanEntries,
   removeWods,
   reschedulePlan,
   saveActivity,
   saveResult,
+  setReference,
   setSession,
   visiblePlan,
 } from './store';
@@ -173,5 +175,29 @@ describe('séance en blocs en cours', () => {
     loadSession();
     expect(getSession()).toBeNull();
     setSession(null);
+  });
+});
+
+describe('WOD de référence', () => {
+  it('se marque, part au coach avec son dernier score, et se retire', () => {
+    const a = entryOf('A');
+    const id = a?.wod_id ?? '';
+    setReference(id, 6);
+    // Même travail que B (fait le 6 janvier) : les deux séances comptent pour la référence.
+    saveResult({ id: 'ref1', wod_id: id, date: '2099-01-10', wod: wod('A'), score: { rounds: 4, extra_reps: 2, rx: true } });
+    expect(references().map((reference) => [reference.saved.wod.title, reference.weeks, reference.dueOn])).toEqual([['A', 6, '2099-02-21']]);
+    expect(buildHistory(30).references).toEqual([
+      {
+        wod: wod('A'),
+        retest_weeks: 6,
+        last: { date: '2099-01-10', score: { rounds: 4, extra_reps: 2, rx: true } },
+        best: { date: '2099-01-06', score: { rounds: 5, extra_reps: 0, rx: true } },
+        due_on: '2099-02-21',
+      },
+    ]);
+    setReference(id, null);
+    expect(references()).toEqual([]);
+    expect(buildHistory(30).references).toBeUndefined();
+    deleteResult('ref1');
   });
 });

@@ -3,6 +3,7 @@ import { addDays, mondayOf, today } from './format';
 import { liftsOf } from './lifts';
 import { knownNames, normalizeWod } from './movements';
 import { recordIds, workKey } from './records';
+import { referenceOf, type Reference } from './references';
 import type { Clock } from './timer';
 import type { Activity, AppData, Backup, HistoryExport, PlanEntry, ProgramItem, Result, SavedWod, SessionWod, SingleWod, StrengthSet, Wod } from './types';
 import { isDate, isObj, validateBackup, validateWod } from './validate';
@@ -181,6 +182,24 @@ export function updateWod(id: string, wod: Wod): void {
   if (!saved) return;
   saved.wod = normalizeWod(wod, known());
   saveData();
+}
+
+/** Fait d'un WOD une référence à refaire toutes les `weeks` semaines, ou (null) n'en fait plus une. */
+export function setReference(id: string, weeks: number | null): void {
+  const saved = findWod(id);
+  if (!saved) return;
+  if (weeks === null) delete saved.reference_weeks;
+  else saved.reference_weeks = weeks;
+  saveData();
+}
+
+/** WOD de référence et où ils en sont, dans l'ordre de la bibliothèque. */
+export function references(): Reference[] {
+  const now = today();
+  return data.wods.flatMap((saved) => {
+    const reference = saved.reference_weeks === undefined ? null : referenceOf(saved, sameWorkout(saved.wod), now);
+    return reference ? [reference] : [];
+  });
 }
 
 export function deleteWod(id: string): void {
@@ -421,6 +440,16 @@ export function buildHistory(limit?: number): HistoryExport {
         ...(last && { last: { date: last.date, sets: last.sets } }),
       };
     });
+  }
+  const refs = references();
+  if (refs.length > 0) {
+    history.references = refs.map(({ saved, weeks, last, best, dueOn }) => ({
+      wod: saved.wod,
+      retest_weeks: weeks,
+      ...(last && { last: { date: last.date, score: last.score } }),
+      ...(best && { best: { date: best.date, score: best.score } }),
+      ...(dueOn && { due_on: dueOn }),
+    }));
   }
   return history;
 }

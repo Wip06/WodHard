@@ -406,6 +406,26 @@ a {
   color: var(--warn);
 }
 
+/* WOD de référence, et référence dont le délai est écoulé. */
+.chip.ref {
+  border-color: color-mix(in srgb, var(--good) 50%, transparent);
+  color: var(--good);
+}
+
+.chip.due {
+  border-color: color-mix(in srgb, var(--emom) 55%, transparent);
+  color: var(--emom);
+}
+
+.card.due {
+  border-color: color-mix(in srgb, var(--emom) 45%, var(--line));
+}
+
+.repeat-meta.due,
+.hint.due {
+  color: var(--emom);
+}
+
 /* Sélection de plusieurs WOD */
 
 .select-toggle {
@@ -1862,6 +1882,19 @@ textarea {
 
 .bar.current {
   background: var(--accent);
+}
+
+/* Séance record sur une courbe de progression, et sa légende. */
+.bar.best {
+  background: var(--good);
+}
+
+.note-best {
+  color: var(--good);
+}
+
+.note-last {
+  color: var(--accent);
 }
 
 .bar-label {
