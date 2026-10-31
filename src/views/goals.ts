@@ -4,11 +4,12 @@ import { clock, dateLabel, decimal, kg, scoreLine, setText, today } from '../for
 import { deadlineText, goalStatus, type GoalStatus } from '../goals';
 import { liftFor, liftsOf } from '../lifts';
 import { canonicalName, isRest, nameKey } from '../movements';
-import { DIVISIONS, isFullRace, racePlan, raceSegments, raceTargets } from '../race';
+import { DIVISIONS, isFullRace, RACE_TYPES, raceDetails, raceName, racePace, racePlan, raceSegments, raceTargets, RUN_DISTANCES } from '../race';
+import { SPORT_INFO } from '../sports';
 import { workKey } from '../records';
 import { navigate, type View } from '../router';
-import { deleteGoal, findGoal, findWod, getWods, goalStatuses, newId, saveGoal, sortedResults } from '../store';
-import type { Division, Goal, RaceGoal, SavedWod } from '../types';
+import { deleteGoal, findGoal, findWod, getWods, goalStatuses, newId, saveGoal, sortedActivities, sortedResults } from '../store';
+import type { Division, EnduranceRace, Goal, HyroxRace, RaceGoal, RaceType, SavedWod } from '../types';
 import { validateGoal } from '../validate';
 import { deltaChip, field, openChat, pageHead } from './parts';
 
@@ -86,7 +87,7 @@ function segmentLabel(name: string, distance?: number, reps?: number, run?: numb
  * Plan de course : le temps visé sur chaque segment et le temps cumulé. Avec une course complète
  * déjà faite et chronométrée segment par segment, chaque temps est comparé au plan.
  */
-function racePlanSection(goal: RaceGoal): HTMLElement {
+function racePlanSection(goal: HyroxRace): HTMLElement {
   const plan = racePlan(goal.target_sec);
   const segments = raceSegments();
   const targets = raceTargets(goal.target_sec);
@@ -141,22 +142,33 @@ function racePlanSection(goal: RaceGoal): HTMLElement {
 }
 
 /** Message au coach pour préparer la course. */
-const raceRequest = (goal: RaceGoal) =>
-  `Prépare-moi pour ${goal.name ? `la course ${goal.name}` : 'ma course Hyrox'} du ${dateLabel(goal.date)}, en ${DIVISIONS[goal.division]}, avec l’objectif de finir en ${clock(goal.target_sec)}. Je veux un programme jusqu’à la course, avec des simulations (dont une course complète aux charges de ma catégorie) et un affûtage la dernière semaine.`;
+function raceRequest(goal: RaceGoal): string {
+  if (goal.race === 'hyrox') {
+    return `Prépare-moi pour ${goal.name ? `la course ${goal.name}` : 'ma course Hyrox'} du ${dateLabel(goal.date)}, en ${DIVISIONS[goal.division]}, avec l’objectif de finir en ${clock(goal.target_sec)}. Je veux un programme jusqu’à la course, avec des simulations (dont une course complète aux charges de ma catégorie) et un affûtage la dernière semaine.`;
+  }
+  const aim = goal.target_sec === undefined ? 'avec l’objectif de la finir' : `avec l’objectif de la finir en ${clock(goal.target_sec)}`;
+  return `Prépare-moi pour ${raceName(goal)} du ${dateLabel(goal.date)} (${raceDetails(goal)}), ${aim}. Je veux un programme jusqu’à la course qui garde mes WOD, avec les sorties de préparation qu’il faut et un affûtage la dernière semaine.`;
+}
+
+/** Course d'endurance suivie avec les activités : un sport et une distance. Sinon, elle se coche à la main. */
+const tracked = (goal: EnduranceRace) => RACE_TYPES[goal.race].sport !== undefined && goal.distance_m !== undefined;
 
 /** Un objectif : où tu en es, comment y arriver, et de quoi le modifier ou le cocher. */
 export function goalView(id: string): View | null {
   const goal = findGoal(id);
   if (!goal) return null;
-  const status = goalStatus(goal, sortedResults());
+  const status = goalStatus(goal, sortedResults(), sortedActivities());
+  /** Coché à la main : un objectif libre, ou une course que les activités ne peuvent pas suivre. */
+  const manual = goal.kind === 'free' || (goal.kind === 'race' && goal.race !== 'hyrox' && !tracked(goal));
 
   const setDone = (done: boolean) => {
-    if (goal.kind !== 'free') return;
+    if (goal.kind !== 'free' && (goal.kind !== 'race' || goal.race === 'hyrox')) return;
     const { done_on: _, ...rest } = goal;
     saveGoal(done ? { ...rest, done_on: today() } : rest);
     toast(done ? 'Bravo, objectif atteint !' : 'Objectif remis en cours');
     navigate(`/goal/${id}`, true);
   };
+  const pace = goal.kind === 'race' ? racePace(goal) : null;
 
   const remove = async () => {
     const confirmed = await choose(`Supprimer « ${status.title} » ?`, 'Tes séances ne sont pas touchées.', [
@@ -189,17 +201,25 @@ export function goalView(id: string): View | null {
       status.progress !== undefined && !status.achievedOn && meter(status.progress),
       status.remaining && !status.achievedOn && h('p', { class: 'compare' }, status.remaining),
       status.hint && h('p', { class: 'compare' }, status.hint),
-      goal.kind === 'race' && h('p', { class: 'compare' }, `Hyrox ${DIVISIONS[goal.division]}`),
+      goal.kind === 'race' && h('p', { class: 'compare' }, raceDetails(goal)),
+      pace && h('p', { class: 'compare' }, `allure visée ${pace}`),
       goal.date && !status.achievedOn && h('p', { class: `compare ${goal.date < today() ? 'late' : ''}` }, deadlineText(goal.date, today(), goal.kind === 'race')),
-      goal.kind === 'free' && !status.achievedOn && h('p', { class: 'compare' }, 'Coche-le quand c’est fait.'),
+      manual && !status.achievedOn && h('p', { class: 'compare' }, 'Coche-le quand c’est fait.'),
     ),
     goal.notes && h('p', { class: 'description' }, goal.notes),
-    goal.kind === 'race' && racePlanSection(goal),
+    goal.kind === 'race' && goal.race === 'hyrox' && racePlanSection(goal),
     h(
       'div',
       { class: 'stack' },
-      goal.kind === 'race' && coachReady(loadCoach()) && h('button', { class: 'btn primary block', onclick: () => openChat(raceRequest(goal)) }, 'Préparer la course avec le coach'),
-      goal.kind === 'free' &&
+      // Jour de la course passé : la sortie se note comme une activité, et l'objectif se met à jour.
+      goal.kind === 'race' &&
+        goal.race !== 'hyrox' &&
+        tracked(goal) &&
+        !status.achievedOn &&
+        goal.date <= today() &&
+        h('a', { class: 'btn primary block', href: `#/activity/new/race:${goal.id}` }, 'Noter ma course'),
+      goal.kind === 'race' && coachReady(loadCoach()) && h('button', { class: 'btn block', onclick: () => openChat(raceRequest(goal)) }, 'Préparer la course avec le coach'),
+      manual &&
         (goal.done_on
           ? h('button', { class: 'btn block', onclick: () => setDone(false) }, 'Finalement pas encore')
           : h('button', { class: 'btn primary block', onclick: () => setDone(true) }, 'C’est atteint !')),
@@ -223,6 +243,7 @@ export function goalFormView(id?: string, preset?: string): View | null {
   if (id !== undefined && !editing) return null;
   const results = sortedResults();
   const wods = goalWods();
+  const number = (input: HTMLInputElement) => (input.value.trim() === '' ? undefined : Number(input.value.trim().replace(',', '.')));
   const presetWod = preset?.startsWith('wod:') ? findWod(preset.slice(4)) : undefined;
   const presetLift = preset?.startsWith('lift:') ? liftsOf(results).find((lift) => lift.key === decodeURIComponent(preset.slice(5))) : undefined;
   let kind: Kind = editing?.kind ?? (presetWod ? 'wod' : presetLift ? 'lift' : 'lift');
@@ -297,29 +318,128 @@ export function goalFormView(id?: string, preset?: string): View | null {
   title.value = editing?.kind === 'free' ? editing.title : '';
   const freePanel = h('div', { class: 'stack' }, field('Objectif', title), h('p', { class: 'hint left' }, 'Tu le coches toi-même quand c’est fait.'));
 
-  // Course Hyrox
-  const raceName = h('input', { type: 'text', autocomplete: 'off', maxlength: 60, placeholder: 'Hyrox Paris', 'aria-label': 'Nom de la course' });
-  raceName.value = editing?.kind === 'race' ? (editing.name ?? '') : '';
+  // Course : Hyrox, ou une course d'endurance (course à pied, trail, vélo…)
+  const race = editing?.kind === 'race' ? editing : undefined;
+  const raceType = h(
+    'select',
+    { 'aria-label': 'Type de course' },
+    h('option', { value: '' }, 'Choisir…'),
+    (Object.keys(RACE_TYPES) as RaceType[]).map((value) => h('option', { value, selected: race?.race === value }, RACE_TYPES[value].label)),
+  );
+  const raceNameInput = h('input', { type: 'text', autocomplete: 'off', maxlength: 60, 'aria-label': 'Nom de la course' });
+  raceNameInput.value = race?.name ?? '';
   const division = h(
     'select',
     { 'aria-label': 'Catégorie' },
     h('option', { value: '' }, 'Choisir…'),
-    (Object.keys(DIVISIONS) as Division[]).map((value) => h('option', { value, selected: editing?.kind === 'race' && editing.division === value }, DIVISIONS[value])),
+    (Object.keys(DIVISIONS) as Division[]).map((value) => h('option', { value, selected: race?.race === 'hyrox' && race.division === value }, DIVISIONS[value])),
   );
+  const distanceInput = h('input', { ...DECIMAL, 'aria-label': 'Distance' });
+  const distanceUnit = h('span');
+  const elevation = h('input', { type: 'number', inputmode: 'numeric', min: 0, step: 10, 'aria-label': 'Dénivelé positif' });
   const hours = h('input', { type: 'number', inputmode: 'numeric', min: 0, step: 1, 'aria-label': 'Heures' });
   const raceMinutes = h('input', { type: 'number', inputmode: 'numeric', min: 0, max: 59, step: 1, 'aria-label': 'Minutes de course' });
-  if (editing?.kind === 'race') {
-    hours.value = String(Math.floor(editing.target_sec / 3600));
-    raceMinutes.value = String(Math.floor((editing.target_sec % 3600) / 60));
+  const raceSeconds = h('input', { type: 'number', inputmode: 'numeric', min: 0, max: 59, step: 1, 'aria-label': 'Secondes de course' });
+  if (race?.target_sec !== undefined) {
+    hours.value = String(Math.floor(race.target_sec / 3600));
+    raceMinutes.value = String(Math.floor((race.target_sec % 3600) / 60));
+    raceSeconds.value = race.target_sec % 60 ? String(race.target_sec % 60) : '';
   }
+  /** Distance en mètres : saisie en km, sauf la natation, en mètres. */
+  const inMeters = () => SPORT_INFO[RACE_TYPES[raceType.value as RaceType]?.sport ?? 'run'].unit === 'm';
+  const raceDistance = () => {
+    const value = number(distanceInput);
+    return value === undefined ? undefined : inMeters() ? value : Math.round(value * 1000 * 10) / 10;
+  };
+  const showDistance = (meters: number | undefined) => {
+    distanceInput.value = meters === undefined ? '' : String(inMeters() ? meters : meters / 1000).replace('.', ',');
+  };
+  if (race?.race !== 'hyrox' && race?.distance_m !== undefined) showDistance(race.distance_m);
+  if (race?.race === 'trail' && race.elevation_m !== undefined) elevation.value = String(race.elevation_m);
+  const raceTime = () =>
+    [hours, raceMinutes, raceSeconds].every((input) => number(input) === undefined)
+      ? undefined
+      : (number(hours) ?? 0) * 3600 + (number(raceMinutes) ?? 0) * 60 + (number(raceSeconds) ?? 0);
+  const presets = h(
+    'div',
+    { class: 'presets' },
+    RUN_DISTANCES.map(({ label, meters }) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'btn',
+          onclick: () => {
+            showDistance(meters);
+            refreshRace();
+          },
+        },
+        label,
+      ),
+    ),
+  );
+  const divisionField = field('Catégorie', division);
+  const distanceField = field('Distance (facultatif)', distanceInput, distanceUnit);
+  const elevationField = field('Dénivelé positif (facultatif)', elevation, 'm D+');
+  const timeLabel = h('span', { class: 'field-label' });
+  const raceTimeField = h('div', { class: 'field' }, timeLabel, h('div', { class: 'field-row' }, hours, 'h', raceMinutes, 'min', raceSeconds, 's'));
+  const raceHint = h('p', { class: 'hint left' });
+  const NAME_PLACEHOLDERS: Record<RaceType, string> = {
+    hyrox: 'Hyrox Paris',
+    run: 'Marathon de Paris',
+    trail: 'Trail des Templiers',
+    bike: 'Étape du Tour',
+    swim: 'Traversée du lac',
+    triathlon: 'Triathlon de Nice',
+    other: 'Spartan Race',
+  };
+  /** Les champs du type choisi, et l'allure qui correspond au temps visé. */
+  const refreshRace = () => {
+    const type = (raceType.value || undefined) as RaceType | undefined;
+    const sport = type ? RACE_TYPES[type].sport : undefined;
+    raceNameInput.placeholder = type ? NAME_PLACEHOLDERS[type] : '';
+    divisionField.hidden = type !== 'hyrox';
+    distanceField.hidden = !type || type === 'hyrox' || type === 'triathlon';
+    distanceUnit.textContent = inMeters() ? 'm' : 'km';
+    presets.hidden = type !== 'run';
+    elevationField.hidden = type !== 'trail';
+    raceTimeField.hidden = !type;
+    timeLabel.textContent = type === 'hyrox' ? 'Temps visé' : 'Temps visé (facultatif : vide pour viser l’arrivée)';
+    const meters = raceDistance();
+    const time = raceTime();
+    const pace = sport && meters && time ? SPORT_INFO[sport].pace?.(time, meters) : undefined;
+    raceHint.textContent =
+      type === 'hyrox'
+        ? 'L’appli en tire un plan de course segment par segment, et te dit en simulation si tu es dans les temps.'
+        : pace
+          ? `${sport === 'bike' ? 'Vitesse' : 'Allure'} visée : ${pace}`
+          : sport && type !== 'triathlon'
+            ? 'Avec une distance, tes activités de ce sport suivent ta préparation.'
+            : type
+              ? 'Tu la coches toi-même une fois finie.'
+              : '';
+  };
+  // Changer de type garde la distance saisie, convertie si l'unité change (km ↔ m).
+  let kept = raceDistance();
+  raceType.addEventListener('focus', () => (kept = raceDistance()));
+  raceType.addEventListener('change', () => {
+    showDistance(kept);
+    refreshRace();
+  });
+  for (const input of [distanceInput, hours, raceMinutes, raceSeconds]) input.addEventListener('input', refreshRace);
   const racePanel = h(
     'div',
     { class: 'stack' },
-    field('Nom (facultatif)', raceName),
-    field('Catégorie', division),
-    field('Temps visé', hours, 'h', raceMinutes, 'min'),
-    h('p', { class: 'hint left' }, 'L’appli en tire un plan de course segment par segment, et te dit en simulation si tu es dans les temps.'),
+    field('Type de course', raceType),
+    field('Nom (facultatif)', raceNameInput),
+    divisionField,
+    distanceField,
+    presets,
+    elevationField,
+    raceTimeField,
+    raceHint,
   );
+  refreshRace();
 
   // Commun
   const date = h('input', { type: 'date', min: today(), 'aria-label': 'Échéance' });
@@ -353,8 +473,6 @@ export function goalFormView(id?: string, preset?: string): View | null {
   };
   showPanel();
 
-  const number = (input: HTMLInputElement) => (input.value.trim() === '' ? undefined : Number(input.value.trim().replace(',', '.')));
-
   const submit = (event: Event) => {
     event.preventDefault();
     const base = {
@@ -378,8 +496,21 @@ export function goalFormView(id?: string, preset?: string): View | null {
         ...(wod?.type === 'amrap' ? { rounds: number(rounds) ?? 0, ...(number(extra) && { extra_reps: number(extra) }) } : { time_sec: time }),
       };
     } else if (kind === 'race') {
-      const time = number(hours) === undefined && number(raceMinutes) === undefined ? undefined : (number(hours) ?? 0) * 3600 + (number(raceMinutes) ?? 0) * 60;
-      raw = { ...base, ...(raceName.value.trim() && { name: raceName.value.trim() }), division: division.value || undefined, target_sec: time };
+      const type = raceType.value || undefined;
+      const time = raceTime();
+      const common = { ...base, race: type, ...(raceNameInput.value.trim() && { name: raceNameInput.value.trim() }) };
+      raw =
+        type === 'hyrox'
+          ? { ...common, division: division.value || undefined, target_sec: time }
+          : {
+              ...common,
+              ...(type !== 'triathlon' && raceDistance() !== undefined && { distance_m: raceDistance() }),
+              ...(type === 'trail' && number(elevation) !== undefined && { elevation_m: number(elevation) }),
+              ...(time !== undefined && { target_sec: time }),
+              ...(race?.race !== 'hyrox' && race?.done_on && { done_on: race.done_on }),
+            };
+      // Sans type choisi, le validateur lirait une ancienne course Hyrox : on le dit clairement.
+      if (!type) raw.race = '';
     } else {
       raw = { ...base, title: title.value.trim(), ...(editing?.kind === 'free' && editing.done_on && { done_on: editing.done_on }) };
     }
@@ -430,8 +561,11 @@ const ERROR_LABELS: Record<string, string> = {
   title: 'Objectif',
   date: 'Date',
   name: 'Nom',
+  race: 'Type de course',
   division: 'Catégorie',
   target_sec: 'Temps visé',
+  distance_m: 'Distance',
+  elevation_m: 'Dénivelé',
 };
 
 /** « load_kg : doit être un nombre > 0 » → « Charge visée : à remplir (un nombre > 0) ». */
@@ -441,7 +575,7 @@ function humanize(error: string): string {
   const key = path.replace(/[.[].*$/, '');
   const label = ERROR_LABELS[key];
   if (!label) return error;
-  if (message.startsWith('champ manquant') || message === 'doit être un texte non vide' || message.startsWith('le WOD doit') || message.startsWith('doit valoir "open')) {
+  if (message.startsWith('champ manquant') || message === 'doit être un texte non vide' || message.startsWith('le WOD doit') || message.startsWith('doit valoir "open') || message.startsWith('doit valoir "hyrox')) {
     return `${label} : à remplir`;
   }
   return `${label} : ${message}`;

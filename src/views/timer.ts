@@ -4,7 +4,7 @@ import { celebrate } from '../fireworks';
 import { clock as clockText, duration, movementText, plural, today, wodHeadline } from '../format';
 import { navigate, type View } from '../router';
 import { isRest } from '../movements';
-import { nextRace, segmentTargets } from '../race';
+import { nextHyrox, segmentTargets } from '../race';
 import { getGoals, getSession, setSession } from '../store';
 import { cuesBetween, elapsedMs, frame, pause, resume, totalMs, type Frame } from '../timer';
 import type { Movement } from '../types';
@@ -49,7 +49,7 @@ export function timerView(): View | null {
   /** Segment en cours (le dernier reste affiché une fois tous terminés). */
   const segmentIndex = () => Math.min(marks.length, segments.length - 1);
   // Course Hyrox prévue : l'objectif de chaque segment, d'après le plan de course.
-  const race = stepped ? nextRace(getGoals(), today()) : undefined;
+  const race = stepped ? nextHyrox(getGoals(), today()) : undefined;
   const targets = race ? segmentTargets(segments, race.target_sec) : [];
   const planned = targets.some((target) => target !== null);
   /**

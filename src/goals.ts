@@ -1,11 +1,18 @@
-import { clock, daysBetween, kg, plural, scoreLine } from './format';
+import { addDays, clock, daysBetween, kg, plural, scoreLine, today as todayIso } from './format';
 import { liftFor } from './lifts';
 import { repsPerRound, workKey } from './records';
-import { DIVISIONS, isFullRace } from './race';
-import type { Goal, GoalSummary, RaceGoal, Result, WodGoal } from './types';
+import { isFullRace, predictTime, RACE_TYPES, raceDetails, raceName } from './race';
+import { distanceText } from './sports';
+import type { Activity, EnduranceRace, Goal, GoalSummary, HyroxRace, Result, WodGoal } from './types';
 
 const shortDate = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 const round = (value: number) => Math.round(value * 2) / 2;
+/** Part de la distance d'une course qu'une sortie doit couvrir pour compter (écarts de montre, de tracé). */
+const DISTANCE_TOLERANCE = 0.97;
+/** Sorties récentes, pour la prédiction et la plus longue sortie : 8 semaines. */
+const RECENT_DAYS = 56;
+/** Sortie la plus courte retenue pour prédire un temps de course. */
+const PREDICTION_MIN_M = 3000;
 
 /** Où en est un objectif. */
 export interface GoalStatus {
@@ -31,7 +38,7 @@ export function goalTitle(goal: Goal): string {
     case 'free':
       return goal.title;
     case 'race':
-      return `${goal.name ?? 'Course Hyrox'} sous ${clock(goal.target_sec)}`;
+      return goal.target_sec === undefined ? raceName(goal) : `${raceName(goal)} sous ${clock(goal.target_sec)}`;
   }
 }
 
@@ -113,15 +120,18 @@ function wodStatus(goal: WodGoal, results: Result[]): Omit<GoalStatus, 'goal' | 
   };
 }
 
-/** Course : le meilleur temps sur une course complète en Rx (simulation ou course officielle). */
-function raceStatus(goal: RaceGoal, results: Result[]): Omit<GoalStatus, 'goal' | 'title'> {
+/**
+ * Course Hyrox : le meilleur temps sur une course complète en Rx, simulation comprise. L'objectif
+ * n'est atteint que le jour de la course (ou après) : c'est la course qui compte.
+ */
+function hyroxStatus(goal: HyroxRace, results: Result[]): Omit<GoalStatus, 'goal' | 'title'> {
   const races = [...results]
     .reverse()
     .flatMap((result) => (result.score.rx && isFullRace(result.wod) && 'finished' in result.score && result.score.finished ? [{ date: result.date, sec: result.score.time_sec }] : []));
   if (races.length === 0) return { progress: 0, current: 'pas encore de course complète', hint: 'Fais une simulation complète pour voir où tu en es.' };
   const best = Math.min(...races.map((race) => race.sec));
   const last = races.at(-1)!;
-  const achievedOn = races.find((race) => race.sec <= goal.target_sec)?.date;
+  const achievedOn = races.find((race) => race.date >= goal.date && race.sec <= goal.target_sec)?.date;
   return {
     progress: Math.min(1, goal.target_sec / best),
     current: `meilleure course complète ${clock(best)}`,
@@ -131,8 +141,60 @@ function raceStatus(goal: RaceGoal, results: Result[]): Omit<GoalStatus, 'goal' 
   };
 }
 
-/** Avancement d'un objectif, d'après les séances (de la plus récente à la plus ancienne). */
-export function goalStatus(goal: Goal, results: Result[]): GoalStatus {
+/**
+ * Course d'endurance, suivie avec les activités du même sport : le meilleur temps sur la distance
+ * (ramené à la distance exacte), une prédiction d'après les sorties récentes en course à pied, et
+ * la plus longue sortie récente. Atteinte par une sortie du jour de la course (ou d'après) qui
+ * couvre la distance dans le temps visé. Sans sport ni distance, elle se coche à la main.
+ */
+function enduranceStatus(goal: EnduranceRace, activities: Activity[], today: string): Omit<GoalStatus, 'goal' | 'title'> {
+  const sport = RACE_TYPES[goal.race].sport;
+  const distance = goal.distance_m;
+  if (!sport || distance === undefined) return goal.done_on ? { achievedOn: goal.done_on } : {};
+  const outings = activities
+    .flatMap((activity) => (activity.sport === sport && activity.distance_m !== undefined ? [{ ...activity, meters: activity.distance_m }] : []))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const since = addDays(today, -RECENT_DAYS);
+  const recent = outings.filter((outing) => outing.date >= since);
+  const longest = Math.max(0, ...recent.map((outing) => outing.meters));
+  const longestText = recent.length > 0 ? `plus longue sortie sur 8 semaines : ${distanceText(longest, sport)}` : undefined;
+  const covering = outings.filter((outing) => outing.meters >= distance * DISTANCE_TOLERANCE).map((outing) => ({ date: outing.date, sec: (outing.duration_sec * distance) / outing.meters }));
+  const target = goal.target_sec;
+  const achievedOn = covering.find((outing) => outing.date >= goal.date && (target === undefined || outing.sec <= target))?.date ?? goal.done_on;
+
+  // Finir : la préparation se lit à la plus longue sortie récente.
+  if (target === undefined) {
+    return { progress: Math.min(1, longest / distance), ...(longestText && { current: longestText }), ...(achievedOn && { achievedOn }) };
+  }
+  const best = covering.length > 0 ? Math.min(...covering.map((outing) => outing.sec)) : undefined;
+  const predictions = goal.race === 'run' ? recent.filter((outing) => outing.meters >= PREDICTION_MIN_M).map((outing) => predictTime(outing.duration_sec, outing.meters, distance)) : [];
+  const prediction = predictions.length > 0 ? Math.min(...predictions) : undefined;
+  // La meilleure référence : un temps réel sur la distance, sinon la prédiction.
+  const reference = best ?? prediction;
+  const current =
+    best !== undefined ? `meilleur temps sur la distance ${clock(Math.round(best))}` : prediction !== undefined ? `prédiction ${clock(Math.round(prediction))}` : (longestText ?? 'pas encore de sortie');
+  const hint =
+    best !== undefined && prediction !== undefined
+      ? `prédiction d’après tes sorties récentes : ${clock(Math.round(prediction))}`
+      : best === undefined && prediction !== undefined
+        ? 'Prédiction d’après ta meilleure sortie récente (formule de Riegel).'
+        : best !== undefined
+          ? longestText
+          : undefined;
+  return {
+    progress: reference === undefined ? 0 : Math.min(1, target / reference),
+    current,
+    ...(reference !== undefined && reference > target && { remaining: `encore ${clock(Math.round(reference - target))} à gagner` }),
+    ...(hint && { hint }),
+    ...(achievedOn && { achievedOn }),
+  };
+}
+
+/**
+ * Avancement d'un objectif, d'après les séances (de la plus récente à la plus ancienne) et les
+ * activités d'autres sports.
+ */
+export function goalStatus(goal: Goal, results: Result[], activities: Activity[] = [], today = todayIso()): GoalStatus {
   const title = goalTitle(goal);
   switch (goal.kind) {
     case 'lift':
@@ -142,7 +204,7 @@ export function goalStatus(goal: Goal, results: Result[]): GoalStatus {
     case 'free':
       return { goal, title, ...(goal.done_on && { achievedOn: goal.done_on }) };
     case 'race':
-      return { goal, title, ...raceStatus(goal, results) };
+      return { goal, title, ...(goal.race === 'hyrox' ? hyroxStatus(goal, results) : enduranceStatus(goal, activities, today)) };
   }
 }
 
@@ -155,11 +217,18 @@ export function sortGoals(statuses: GoalStatus[]): GoalStatus[] {
   });
 }
 
-/** Objectifs atteints par une nouvelle séance : ceux qui ne l'étaient pas avec les séances d'avant. */
-export function newlyAchieved(goals: readonly Goal[], before: Result[], after: Result[]): GoalStatus[] {
+/**
+ * Objectifs atteints par une nouvelle séance ou une nouvelle activité : ceux qui ne l'étaient pas
+ * avant. Un objectif coché à la main n'en fait pas partie.
+ */
+export function newlyAchieved(
+  goals: readonly Goal[],
+  before: { results: Result[]; activities?: Activity[] },
+  after: { results: Result[]; activities?: Activity[] },
+): GoalStatus[] {
   return goals.flatMap((goal) => {
-    if (goal.kind === 'free' || goalStatus(goal, before).achievedOn) return [];
-    const now = goalStatus(goal, after);
+    if (goal.kind === 'free' || goalStatus(goal, before.results, before.activities).achievedOn) return [];
+    const now = goalStatus(goal, after.results, after.activities);
     return now.achievedOn ? [now] : [];
   });
 }
@@ -168,8 +237,8 @@ export function newlyAchieved(goals: readonly Goal[], before: Result[], after: R
 export function goalSummary(status: GoalStatus): GoalSummary {
   const { goal } = status;
   return {
-    // Une course part avec sa catégorie : le coach en déduit les charges des stations.
-    goal: goal.kind === 'race' ? `${status.title} (Hyrox ${DIVISIONS[goal.division]})` : status.title,
+    // Une course part avec son type, sa distance ou sa catégorie Hyrox (dont le coach déduit les charges).
+    goal: goal.kind === 'race' ? `${status.title} (${raceDetails(goal)})` : status.title,
     ...(goal.date && { deadline: goal.date }),
     ...(status.current && { current: status.current }),
     ...(status.remaining && { remaining: status.remaining }),

@@ -1,5 +1,60 @@
 import { canonicalName, isRest } from './movements';
-import type { Division, Goal, Movement, RaceGoal, Wod } from './types';
+import { distanceText, SPORT_INFO } from './sports';
+import type { Division, EnduranceRace, Goal, HyroxRace, Movement, RaceGoal, RaceType, Sport, Wod } from './types';
+
+/** Types de course, et le sport des activités qui s'y rapportent. */
+export const RACE_TYPES: Record<RaceType, { label: string; sport?: Sport }> = {
+  hyrox: { label: 'Hyrox' },
+  run: { label: 'Course à pied', sport: 'run' },
+  trail: { label: 'Trail', sport: 'run' },
+  bike: { label: 'Vélo', sport: 'bike' },
+  swim: { label: 'Natation', sport: 'swim' },
+  triathlon: { label: 'Triathlon' },
+  other: { label: 'Autre course' },
+};
+
+/** Distances classiques de course à pied, en mètres. */
+export const RUN_DISTANCES: { label: string; meters: number }[] = [
+  { label: '5 km', meters: 5000 },
+  { label: '10 km', meters: 10_000 },
+  { label: 'Semi', meters: 21_097.5 },
+  { label: 'Marathon', meters: 42_195 },
+];
+
+/** Distance lisible : « 10 km », « 1 500 m » à la nage. */
+const raceDistance = (goal: EnduranceRace) =>
+  goal.distance_m === undefined ? '' : distanceText(goal.distance_m, RACE_TYPES[goal.race].sport ?? 'run');
+
+/** Nom par défaut : « Course Hyrox », « Semi-marathon », « 10 km », « Trail 42 km », « Vélo 90 km ». */
+export function raceName(goal: RaceGoal): string {
+  if (goal.name) return goal.name;
+  if (goal.race === 'hyrox') return 'Course Hyrox';
+  if (goal.race === 'run' && goal.distance_m === 21_097.5) return 'Semi-marathon';
+  if (goal.race === 'run' && goal.distance_m === 42_195) return 'Marathon';
+  const distance = raceDistance(goal);
+  if (goal.race === 'run') return distance || 'Course à pied';
+  if (goal.race === 'triathlon' || goal.race === 'other') return RACE_TYPES[goal.race].label;
+  return distance ? `${RACE_TYPES[goal.race].label} ${distance}` : RACE_TYPES[goal.race].label;
+}
+
+/** « Hyrox Open homme », « Course à pied · 21,1 km », « Trail · 42 km · 2 500 m D+ ». */
+export function raceDetails(goal: RaceGoal): string {
+  if (goal.race === 'hyrox') return `Hyrox ${DIVISIONS[goal.division]}`;
+  const parts = [RACE_TYPES[goal.race].label, raceDistance(goal), goal.elevation_m !== undefined && `${Math.round(goal.elevation_m).toLocaleString('fr-FR')} m D+`];
+  return parts.filter(Boolean).join(' · ');
+}
+
+/** Allure (ou vitesse) visée : « 4:58 /km », « 30 km/h ». */
+export function racePace(goal: RaceGoal): string | null {
+  if (goal.race === 'hyrox' || goal.distance_m === undefined || goal.target_sec === undefined) return null;
+  const sport = RACE_TYPES[goal.race].sport;
+  const pace = sport && SPORT_INFO[sport].pace;
+  return pace ? pace(goal.target_sec, goal.distance_m) : null;
+}
+
+/** Temps prévu sur `toM` d'après un temps sur `fromM` (formule de Riegel). */
+export const predictTime = (sec: number, fromM: number, toM: number) => sec * (toM / fromM) ** 1.06;
+
 
 export const DIVISIONS: Record<Division, string> = {
   open_women: 'Open femme',
@@ -122,5 +177,12 @@ export function isFullRace(wod: Wod): boolean {
 export function nextRace(goals: readonly Goal[], today: string): RaceGoal | undefined {
   return goals
     .filter((goal): goal is RaceGoal => goal.kind === 'race' && goal.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+}
+
+/** La prochaine course Hyrox prévue : c'est son plan qui guide le chrono des simulations. */
+export function nextHyrox(goals: readonly Goal[], today: string): HyroxRace | undefined {
+  return goals
+    .filter((goal): goal is HyroxRace => goal.kind === 'race' && goal.race === 'hyrox' && goal.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date))[0];
 }

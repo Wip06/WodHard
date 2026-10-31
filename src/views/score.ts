@@ -651,7 +651,7 @@ export function scoreView(resultId?: string): View | null {
       saveResult(result);
       setSession(null);
       // Objectif atteint, record sur le WOD (déjà fait), ou sur un exercice de force (charge, 1RM estimé, reps).
-      const reached = newlyAchieved(getGoals(), before, sortedResults())[0];
+      const reached = newlyAchieved(getGoals(), { results: before }, { results: sortedResults() })[0];
       const lifted = recordsBeaten(before, result)[0];
       const record = currentRecords().has(id) || lifted !== undefined || reached !== undefined;
       const saved = findResult(id);

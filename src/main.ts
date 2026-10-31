@@ -45,6 +45,7 @@ const routes: [RegExp, (...params: string[]) => View | null][] = [
   [/^\/goal\/([\w-]+)\/edit$/, (id) => goalFormView(id)],
   [/^\/goal\/([\w-]+)$/, goalView],
   [/^\/activity\/new$/, () => activityFormView()],
+  [/^\/activity\/new\/(race:[\w-]+)$/, (preset) => activityFormView(undefined, preset)],
   [/^\/activity\/([\w-]+)\/edit$/, (id) => activityFormView(id)],
   [/^\/activity\/([\w-]+)$/, activityView],
 ];

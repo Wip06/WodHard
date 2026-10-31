@@ -47,7 +47,7 @@ describe('objectifs : avancement', () => {
   it('repère les objectifs atteints par une nouvelle séance', () => {
     const goals = [lift(120, 5), { ...lift(100, 5), id: 'easy' }];
     const after: Result[] = [{ id: 's3', date: '2026-10-25', wod: squat, score: { exercises: [[{ reps: 5, load_kg: 120 }]], rx: true } }, ...history];
-    expect(newlyAchieved(goals, history, after).map((status) => status.goal.id)).toEqual(['g']);
+    expect(newlyAchieved(goals, { results: history }, { results: after }).map((status) => status.goal.id)).toEqual(['g']);
   });
 
   it('trie : en cours par échéance, puis atteints', () => {

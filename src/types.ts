@@ -262,15 +262,37 @@ export interface FreeGoal extends GoalBase {
 
 export type Division = 'open_women' | 'open_men' | 'pro_women' | 'pro_men' | 'doubles_women' | 'doubles_men' | 'doubles_mixed';
 
-/** Une course Hyrox à une date, avec un temps visé : atteint par une course complète (8 × 1 km et 8 stations) en Rx. */
-export interface RaceGoal extends GoalBase {
+export type RaceType = 'hyrox' | 'run' | 'trail' | 'bike' | 'swim' | 'triathlon' | 'other';
+
+interface RaceBase extends GoalBase {
   kind: 'race';
-  /** « Hyrox Paris » ; facultatif. */
+  /** « Hyrox Paris », « Marathon de Nice » ; facultatif. */
   name?: string;
-  division: Division;
   date: string;
+}
+
+/** Une course Hyrox, avec un temps visé : atteint par une course complète (8 × 1 km et 8 stations) en Rx. */
+export interface HyroxRace extends RaceBase {
+  race: 'hyrox';
+  division: Division;
   target_sec: number;
 }
+
+/**
+ * Une course d'endurance : course à pied, trail, vélo… Le temps visé est facultatif (finir
+ * suffit). Avec une distance, elle se suit avec les activités du même sport ; sans, elle se
+ * coche à la main (`done_on`).
+ */
+export interface EnduranceRace extends RaceBase {
+  race: Exclude<RaceType, 'hyrox'>;
+  distance_m?: number;
+  /** Dénivelé positif, en mètres (trail). */
+  elevation_m?: number;
+  target_sec?: number;
+  done_on?: string;
+}
+
+export type RaceGoal = HyroxRace | EnduranceRace;
 
 export type Goal = LiftGoal | WodGoal | FreeGoal | RaceGoal;
 

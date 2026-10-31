@@ -9,6 +9,7 @@ import type {
   EmomWod,
   Division,
   Exercise,
+  RaceType,
   ForTimeCapped,
   Goal,
   ForTimeFinished,
@@ -631,8 +632,9 @@ const GOAL_KEYS: Record<Goal['kind'], string[]> = {
   lift: ['exercise', 'load_kg', 'reps'],
   wod: ['wod', 'wod_id', 'time_sec', 'rounds', 'extra_reps'],
   free: ['title', 'done_on'],
-  race: ['name', 'division', 'target_sec'],
+  race: ['race', 'name', 'division', 'target_sec', 'distance_m', 'elevation_m', 'done_on'],
 };
+const RACE_TYPES: RaceType[] = ['hyrox', 'run', 'trail', 'bike', 'swim', 'triathlon', 'other'];
 const DIVISIONS: Division[] = ['open_women', 'open_men', 'pro_women', 'pro_men', 'doubles_women', 'doubles_men', 'doubles_mixed'];
 
 function checkGoal(raw: unknown, path: string, errors: string[]): Goal | undefined {
@@ -673,13 +675,28 @@ function checkGoal(raw: unknown, path: string, errors: string[]): Goal | undefin
       return compact<Goal>({ kind, ...base, wod, wod_id, time_sec, rounds, extra_reps });
     }
     case 'race': {
+      // Les premières courses enregistrées étaient toutes des Hyrox, sans type.
+      const race = raw.race === undefined ? 'hyrox' : RACE_TYPES.find((value) => value === raw.race);
+      if (!race) return fail(errors, at('race'), `doit valoir ${RACE_TYPES.map((value) => `"${value}"`).join(', ')}`);
       const name = raw.name === undefined ? undefined : checkText(raw.name, at('name'), errors, TITLE_MAX);
-      const division = DIVISIONS.find((value) => value === raw.division);
-      if (!division) fail(errors, at('division'), `doit valoir ${DIVISIONS.map((value) => `"${value}"`).join(', ')}`);
-      const target_sec = checkNumber(raw.target_sec, at('target_sec'), errors, 'integer');
       if (raw.date === undefined) fail(errors, at('date'), 'champ manquant : la date de la course');
-      if (errors.length > before || !division || target_sec === undefined || date === undefined) return undefined;
-      return compact<Goal>({ kind, ...base, date, name, division, target_sec });
+      if (race === 'hyrox') {
+        const division = DIVISIONS.find((value) => value === raw.division);
+        if (!division) fail(errors, at('division'), `doit valoir ${DIVISIONS.map((value) => `"${value}"`).join(', ')}`);
+        const target_sec = checkNumber(raw.target_sec, at('target_sec'), errors, 'integer');
+        for (const key of ['distance_m', 'elevation_m', 'done_on']) {
+          if (raw[key] !== undefined) fail(errors, at(key), 'pas pour une course Hyrox');
+        }
+        if (errors.length > before || !division || target_sec === undefined || date === undefined) return undefined;
+        return compact<Goal>({ kind, ...base, race, date, name, division, target_sec });
+      }
+      if (raw.division !== undefined) fail(errors, at('division'), 'seulement pour une course Hyrox');
+      const distance_m = raw.distance_m === undefined ? undefined : checkNumber(raw.distance_m, at('distance_m'), errors, 'positive');
+      const elevation_m = raw.elevation_m === undefined ? undefined : checkNumber(raw.elevation_m, at('elevation_m'), errors, 'count');
+      const target_sec = raw.target_sec === undefined ? undefined : checkNumber(raw.target_sec, at('target_sec'), errors, 'integer');
+      const done_on = raw.done_on === undefined ? undefined : isDate(raw.done_on) ? raw.done_on : fail(errors, at('done_on'), 'date attendue au format AAAA-MM-JJ');
+      if (errors.length > before || date === undefined) return undefined;
+      return compact<Goal>({ kind, ...base, race, date, name, distance_m, elevation_m, target_sec, done_on });
     }
     case 'free': {
       const title = checkText(raw.title, at('title'), errors, TITLE_MAX);

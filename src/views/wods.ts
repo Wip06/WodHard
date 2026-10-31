@@ -1,7 +1,7 @@
 import { unlockAudio } from '../audio';
 import { choose, h, toast } from '../dom';
 import { addDays, clock, dateLabel, dayLabel, daysBetween, plural, scoreLine, today, wodHeadline, wodSummary } from '../format';
-import { nextRace } from '../race';
+import { nextRace, raceDetails, raceName } from '../race';
 import { navigate, render, type View } from '../router';
 import { agoText, canBeReference, type Reference } from '../references';
 import { matchesQuery, searchText } from '../search';
@@ -15,6 +15,7 @@ import {
   findWod,
   getGoals,
   getWods,
+  goalStatuses,
   pendingDates,
   planWods,
   previewPlanning,
@@ -72,9 +73,10 @@ function wodCardContent(saved: SavedWod): Content {
   ];
 }
 
-/** Compte à rebours de la prochaine course Hyrox, en tête de l'écran WOD. */
+/** Compte à rebours de la prochaine course pas encore courue, en tête de l'écran WOD. */
 function raceBanner(): HTMLElement | false {
-  const race = nextRace(getGoals(), today());
+  const done = new Set(goalStatuses().flatMap((status) => (status.achievedOn ? [status.goal.id] : [])));
+  const race = nextRace(getGoals().filter((goal) => !done.has(goal.id)), today());
   if (!race) return false;
   const days = daysBetween(today(), race.date);
   const when = days === 0 ? 'C’est aujourd’hui !' : days === 1 ? 'Demain' : `Dans ${days} jours`;
@@ -82,7 +84,7 @@ function raceBanner(): HTMLElement | false {
     'a',
     { class: 'race-banner', href: `#/goal/${race.id}` },
     h('span', { class: 'race-when' }, when),
-    h('span', { class: 'race-name' }, `${race.name ?? 'Course Hyrox'} · objectif ${clock(race.target_sec)}`),
+    h('span', { class: 'race-name' }, `${raceName(race)} · ${race.target_sec === undefined ? raceDetails(race) : `objectif ${clock(race.target_sec)}`}`),
   );
 }
 

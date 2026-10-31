@@ -1,9 +1,12 @@
 import { choose, h, toast } from '../dom';
+import { celebrate } from '../fireworks';
+import { newlyAchieved } from '../goals';
+import { RACE_TYPES, raceName } from '../race';
 import { clock, dateLabel, today } from '../format';
 import { coachReady, loadCoach } from '../claude';
 import { navigate, type View } from '../router';
 import { activityLine, activityName, distanceText, paceText, SPORT_INFO } from '../sports';
-import { deleteActivity, findActivity, newId, saveActivity } from '../store';
+import { deleteActivity, findActivity, findGoal, getGoals, newId, saveActivity, sortedActivities, sortedResults } from '../store';
 import type { Activity, Sport } from '../types';
 import { SPORTS, validateActivity } from '../validate';
 import { field, openChat, pageHead } from './parts';
@@ -44,11 +47,17 @@ function numberInput(label: string, value: number | string | undefined, decimal 
   });
 }
 
-/** Saisie d'une activité d'un autre sport : nouvelle, ou modification de `id`. */
-export function activityFormView(id?: string): View | null {
+/**
+ * Saisie d'une activité d'un autre sport : nouvelle, ou modification de `id`. Avec `preset`
+ * (« race:<objectif> »), elle est pré-remplie avec la course : sport, nom, date et distance.
+ */
+export function activityFormView(id?: string, preset?: string): View | null {
   const editing = id === undefined ? undefined : findActivity(id);
   if (id !== undefined && !editing) return null;
-  let sport: Sport = editing?.sport ?? lastSport;
+  const goal = preset?.startsWith('race:') ? findGoal(preset.slice(5)) : undefined;
+  const race = goal?.kind === 'race' && goal.race !== 'hyrox' ? goal : undefined;
+  const raceSport = race ? RACE_TYPES[race.race].sport : undefined;
+  let sport: Sport = editing?.sport ?? raceSport ?? lastSport;
   let rpe = editing?.rpe;
 
   const total = editing?.duration_sec;
@@ -58,8 +67,9 @@ export function activityFormView(id?: string): View | null {
   const distance = numberInput('Distance', undefined, true);
   const distanceUnit = h('span');
   const pace = h('p', { class: 'hint left', 'aria-live': 'polite' });
-  const title = h('input', { type: 'text', autocomplete: 'off', maxlength: 60, 'aria-label': 'Nom', value: editing?.title ?? '' });
-  const date = h('input', { type: 'date', value: editing?.date ?? today(), max: today(), 'aria-label': 'Date' });
+  const title = h('input', { type: 'text', autocomplete: 'off', maxlength: 60, 'aria-label': 'Nom', value: editing?.title ?? (race ? raceName(race) : '') });
+  const raceDay = race && race.date <= today() ? race.date : undefined;
+  const date = h('input', { type: 'date', value: editing?.date ?? raceDay ?? today(), max: today(), 'aria-label': 'Date' });
   const notes = h('textarea', { rows: 3, 'aria-label': 'Notes', placeholder: 'Parcours, sensations… (facultatif)' });
   notes.value = editing?.notes ?? '';
   const errorBox = h('div', { class: 'errors', role: 'alert', hidden: true });
@@ -109,7 +119,7 @@ export function activityFormView(id?: string): View | null {
     ),
   );
   title.placeholder = PLACEHOLDERS[sport];
-  showDistance(editing?.distance_m);
+  showDistance(editing?.distance_m ?? race?.distance_m);
   refreshPace();
 
   const rpeButtons = Array.from({ length: 10 }, (_, i) => i + 1).map((value) =>
@@ -159,9 +169,14 @@ export function activityFormView(id?: string): View | null {
       return;
     }
     lastSport = sport;
+    const results = sortedResults();
+    const before = sortedActivities();
     saveActivity(checked.value);
-    toast(editing ? 'Activité modifiée' : 'Activité enregistrée');
+    // Une course (ou une sortie) qui atteint un objectif se fête comme un record.
+    const reached = newlyAchieved(getGoals(), { results, activities: before }, { results, activities: sortedActivities() })[0];
+    toast(reached ? `Objectif atteint : ${reached.title} !` : editing ? 'Activité modifiée' : 'Activité enregistrée');
     navigate(`/activity/${checked.value.id}`, true);
+    if (reached) celebrate([`/activity/${checked.value.id}`]);
   };
 
   const back = editing ? `#/activity/${editing.id}` : '#/progress';

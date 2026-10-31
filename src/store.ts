@@ -421,7 +421,11 @@ export function saveGoal(goal: Goal): void {
 }
 
 /** Avancement de chaque objectif : en cours d'abord, puis atteints. */
-export const goalStatuses = (): GoalStatus[] => sortGoals(data.goals.map((goal) => goalStatus(goal, sortedResults())));
+export const goalStatuses = (): GoalStatus[] => {
+  const results = sortedResults();
+  const activities = sortedActivities();
+  return sortGoals(data.goals.map((goal) => goalStatus(goal, results, activities)));
+};
 
 export function deleteGoal(id: string): void {
   data.goals = data.goals.filter((goal) => goal.id !== id);
