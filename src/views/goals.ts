@@ -1,6 +1,6 @@
 import { coachReady, loadCoach } from '../claude';
 import { choose, h, toast } from '../dom';
-import { clock, dateLabel, decimal, kg, scoreLine, setText, today } from '../format';
+import { clock, dateLabel, daysBetween, decimal, kg, scoreLine, setText, today } from '../format';
 import { deadlineText, goalStatus, type GoalStatus } from '../goals';
 import { liftFor, liftsOf } from '../lifts';
 import { canonicalName, isRest, nameKey } from '../movements';
@@ -65,6 +65,50 @@ export function goalsBlock(): HTMLElement {
     older.length > 0 && h('details', null, h('summary', { class: 'dash-note' }, `Objectifs atteints plus tôt (${older.length})`), h('ul', { class: 'goals' }, older.map(goalRow))),
     h('a', { class: 'btn block', href: '#/goal/new' }, '+ Nouvel objectif'),
   );
+}
+
+/** « Dans 134 jours », « Demain », « C'est aujourd'hui ! ». */
+function countdown(date: string): string {
+  const days = daysBetween(today(), date);
+  return days === 0 ? 'C’est aujourd’hui !' : days === 1 ? 'Demain' : `Dans ${days} jours`;
+}
+
+/** Un objectif en tête de l'écran WOD : une course avec son compte à rebours, les autres avec leur jauge. */
+function goalBanner(status: GoalStatus): HTMLElement {
+  const { goal } = status;
+  const href = `#/goal/${goal.id}`;
+  if (goal.kind === 'race') {
+    // Sans nom, le nom par défaut (« Trail 42 km ») redirait les détails : on ne garde que ceux-ci.
+    const aim = goal.target_sec === undefined ? raceDetails(goal) : `objectif ${clock(goal.target_sec)}`;
+    const what = goal.name || goal.target_sec !== undefined ? `${raceName(goal)} · ${aim}` : aim;
+    return h(
+      'a',
+      { class: 'goal-banner', href },
+      h('span', { class: 'goal-banner-title' }, countdown(goal.date)),
+      status.progress !== undefined && meter(status.progress),
+      h('span', { class: 'goal-banner-meta' }, what),
+    );
+  }
+  const line = statusLine(status);
+  const late = goal.date !== undefined && goal.date < today();
+  return h(
+    'a',
+    { class: 'goal-banner', href },
+    h('span', { class: 'goal-banner-title' }, status.title),
+    status.progress !== undefined && meter(status.progress),
+    line && h('span', { class: `goal-banner-meta ${late ? 'late' : ''}` }, line),
+  );
+}
+
+/**
+ * Objectifs en cours, en tête de l'écran WOD, par échéance. Les objectifs atteints restent dans
+ * l'onglet Progrès ; une course passée sans être atteinte n'y figure plus.
+ */
+export function goalBanners(): HTMLElement | false {
+  const now = today();
+  const statuses = goalStatuses().filter((status) => !status.achievedOn && !(status.goal.kind === 'race' && status.goal.date < now));
+  if (statuses.length === 0) return false;
+  return h('ul', { class: 'goal-banners', 'aria-label': 'Objectifs en cours' }, statuses.map((status) => h('li', null, goalBanner(status))));
 }
 
 /** Objectifs en cours sur un entraînement ou un exercice, pour les fiches d'un WOD et d'un exercice. */

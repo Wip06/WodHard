@@ -1939,11 +1939,20 @@ textarea {
   color: var(--good);
 }
 
-/* Course Hyrox : compte à rebours en tête de l'écran WOD. */
-.race-banner {
+/* Objectifs en cours en tête de l'écran WOD : compte à rebours d'une course, jauge des autres. */
+.goal-banners {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.goal-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   padding: 12px 16px;
   border: 1px solid color-mix(in srgb, var(--hyrox) 50%, transparent);
   border-radius: var(--radius);
@@ -1952,16 +1961,29 @@ textarea {
   text-decoration: none;
 }
 
-.race-when {
+.goal-banner-title {
   color: var(--hyrox);
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   font-weight: 800;
+  overflow-wrap: anywhere;
 }
 
-.race-name {
+.goal-banner-meta {
   color: var(--muted);
   font-size: 0.9rem;
   overflow-wrap: anywhere;
+}
+
+.goal-banner-meta.late {
+  color: var(--warn);
+}
+
+.goal-banner .meter {
+  background: color-mix(in srgb, var(--hyrox) 18%, var(--surface-2));
+}
+
+.goal-banner .meter > span {
+  background: var(--hyrox);
 }
 
 /* Plan de course : segment, temps visé, temps cumulé. */

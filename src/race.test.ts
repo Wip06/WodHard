@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { clock } from './format';
 import { goalStatus, goalSummary } from './goals';
-import { isFullRace, nextRace, predictTime, raceDetails, raceName, racePace, racePlan, raceSegments, raceTargets, segmentTargets } from './race';
+import { isFullRace, nextHyrox, predictTime, raceDetails, raceName, racePace, racePlan, raceSegments, raceTargets, segmentTargets } from './race';
 import type { Activity, EnduranceRace, Goal, HyroxRace, HyroxWod, Result } from './types';
 import { validateGoal } from './validate';
 
@@ -39,11 +39,12 @@ describe('plan de course Hyrox', () => {
     expect(isFullRace({ ...full, segments: full.segments.slice(0, 8) })).toBe(false);
   });
 
-  it('prochaine course : la plus proche à venir', () => {
+  it('prochaine course Hyrox : la plus proche à venir', () => {
     const past: Goal = { ...race, id: 'old', date: '2026-09-01' };
     const later: Goal = { ...race, id: 'later', date: '2027-06-01' };
-    expect(nextRace([later, past, race], '2026-10-31')?.id).toBe('paris');
-    expect(nextRace([past], '2026-10-31')).toBeUndefined();
+    const semi: Goal = { id: 'semi', kind: 'race', race: 'run', created: '2026-10-01', date: '2026-12-01', distance_m: 21_097.5 };
+    expect(nextHyrox([later, past, semi, race], '2026-10-31')?.id).toBe('paris');
+    expect(nextHyrox([past, semi], '2026-10-31')).toBeUndefined();
   });
 });
 

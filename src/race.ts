@@ -173,13 +173,6 @@ export function isFullRace(wod: Wod): boolean {
   );
 }
 
-/** La prochaine course prévue (aujourd'hui compris), s'il y en a une. */
-export function nextRace(goals: readonly Goal[], today: string): RaceGoal | undefined {
-  return goals
-    .filter((goal): goal is RaceGoal => goal.kind === 'race' && goal.date >= today)
-    .sort((a, b) => a.date.localeCompare(b.date))[0];
-}
-
 /** La prochaine course Hyrox prévue : c'est son plan qui guide le chrono des simulations. */
 export function nextHyrox(goals: readonly Goal[], today: string): HyroxRace | undefined {
   return goals
