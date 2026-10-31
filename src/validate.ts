@@ -7,6 +7,7 @@ import type {
   AppData,
   EmomScore,
   EmomWod,
+  Division,
   Exercise,
   ForTimeCapped,
   Goal,
@@ -630,7 +631,9 @@ const GOAL_KEYS: Record<Goal['kind'], string[]> = {
   lift: ['exercise', 'load_kg', 'reps'],
   wod: ['wod', 'wod_id', 'time_sec', 'rounds', 'extra_reps'],
   free: ['title', 'done_on'],
+  race: ['name', 'division', 'target_sec'],
 };
+const DIVISIONS: Division[] = ['open_women', 'open_men', 'pro_women', 'pro_men', 'doubles_women', 'doubles_men', 'doubles_mixed'];
 
 function checkGoal(raw: unknown, path: string, errors: string[]): Goal | undefined {
   if (!isObj(raw)) return fail(errors, path, 'doit être un objet');
@@ -640,8 +643,8 @@ function checkGoal(raw: unknown, path: string, errors: string[]): Goal | undefin
   const created = isDate(raw.created) ? raw.created : fail(errors, at('created'), 'date attendue au format AAAA-MM-JJ');
   const date = raw.date === undefined ? undefined : isDate(raw.date) ? raw.date : fail(errors, at('date'), 'date attendue au format AAAA-MM-JJ');
   const notes = optionalText(raw.notes, at('notes'), errors);
-  const kind = (['lift', 'wod', 'free'] as const).find((name) => name === raw.kind);
-  if (!kind) return fail(errors, at('kind'), 'doit valoir "lift", "wod" ou "free"');
+  const kind = (['lift', 'wod', 'free', 'race'] as const).find((name) => name === raw.kind);
+  if (!kind) return fail(errors, at('kind'), 'doit valoir "lift", "wod", "free" ou "race"');
   unknownKeys(raw, ['id', 'kind', 'created', 'date', 'notes', ...GOAL_KEYS[kind]], path, errors);
   const base = { id: id ?? '', created: created ?? '', date, notes };
 
@@ -668,6 +671,15 @@ function checkGoal(raw: unknown, path: string, errors: string[]): Goal | undefin
       if (!timed && rounds === 0 && !extra_reps) fail(errors, at('rounds'), 'objectif vide');
       if (errors.length > before || !wod) return undefined;
       return compact<Goal>({ kind, ...base, wod, wod_id, time_sec, rounds, extra_reps });
+    }
+    case 'race': {
+      const name = raw.name === undefined ? undefined : checkText(raw.name, at('name'), errors, TITLE_MAX);
+      const division = DIVISIONS.find((value) => value === raw.division);
+      if (!division) fail(errors, at('division'), `doit valoir ${DIVISIONS.map((value) => `"${value}"`).join(', ')}`);
+      const target_sec = checkNumber(raw.target_sec, at('target_sec'), errors, 'integer');
+      if (raw.date === undefined) fail(errors, at('date'), 'champ manquant : la date de la course');
+      if (errors.length > before || !division || target_sec === undefined || date === undefined) return undefined;
+      return compact<Goal>({ kind, ...base, date, name, division, target_sec });
     }
     case 'free': {
       const title = checkText(raw.title, at('title'), errors, TITLE_MAX);

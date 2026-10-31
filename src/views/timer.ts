@@ -1,10 +1,11 @@
 import { playCue, unlockAudio } from '../audio';
 import { choose, h } from '../dom';
 import { celebrate } from '../fireworks';
-import { clock as clockText, duration, movementText, plural, wodHeadline } from '../format';
+import { clock as clockText, duration, movementText, plural, today, wodHeadline } from '../format';
 import { navigate, type View } from '../router';
 import { isRest } from '../movements';
-import { getSession, setSession } from '../store';
+import { nextRace, segmentTargets } from '../race';
+import { getGoals, getSession, setSession } from '../store';
 import { cuesBetween, elapsedMs, frame, pause, resume, totalMs, type Frame } from '../timer';
 import type { Movement } from '../types';
 import { screenWake } from '../wake';
@@ -47,6 +48,10 @@ export function timerView(): View | null {
   const save = () => setSession({ stage: 'timer', wod, wod_id, clock, rounds, marks, ...(blocks && { blocks }) });
   /** Segment en cours (le dernier reste affiché une fois tous terminés). */
   const segmentIndex = () => Math.min(marks.length, segments.length - 1);
+  // Course Hyrox prévue : l'objectif de chaque segment, d'après le plan de course.
+  const race = stepped ? nextRace(getGoals(), today()) : undefined;
+  const targets = race ? segmentTargets(segments, race.target_sec) : [];
+  const planned = targets.some((target) => target !== null);
   /**
    * Repos en cours, sur le temps du chrono : il s'arrête avec la pause. Dans un Hyrox, la fin
    * d'un segment de repos passe d'elle-même au segment suivant.
@@ -56,6 +61,7 @@ export function timerView(): View | null {
   const phaseEl = h('p', { class: 'timer-phase' });
   const clockEl = h('p', { class: 'timer-clock', role: 'timer' });
   const subEl = h('p', { class: 'timer-sub' });
+  const paceEl = h('p', { class: 'timer-pace', hidden: true });
   const planEl = h('div', { class: 'timer-plan' });
   const restClock = h('strong', { class: 'rest-clock', role: 'timer' });
   const restBox = h(
@@ -101,7 +107,7 @@ export function timerView(): View | null {
     'section',
     { class: 'timer' },
     h('header', { class: 'timer-head' }, h('strong', null, wod.title), h('span', null, blocks ? `${blockStep(blocks)} · ${wodHeadline(wod)}` : wodHeadline(wod))),
-    h('div', { class: 'timer-face' }, phaseEl, clockEl, subEl),
+    h('div', { class: 'timer-face' }, phaseEl, clockEl, subEl, paceEl),
     restBox,
     planEl,
     h(
@@ -156,8 +162,9 @@ export function timerView(): View | null {
         return `Ensuite : ${next.length > 0 ? next.map((movement) => movementText(movement)).join(' + ') : 'repos'}`;
       }
       case 'hyrox': {
-        if (f.phase === 'countdown') return plural(segments.length, 'segment');
-        return `Ce segment : ${lap}`;
+        if (f.phase === 'countdown') return planned && race ? `${plural(segments.length, 'segment')} · plan ${clockText(race.target_sec)}` : plural(segments.length, 'segment');
+        const target = targets[segmentIndex()];
+        return target === null || target === undefined ? `Ce segment : ${lap}` : `Ce segment : ${lap} · objectif ${clockText(target)}`;
       }
     }
   }
@@ -238,6 +245,7 @@ export function timerView(): View | null {
       minusBtn.disabled = rounds === 0;
       finishBtn.textContent = 'Finish';
     }
+    paintPace();
     restBox.hidden = rest === null;
     el.toggleAttribute('data-resting', rest !== null);
     if (rest) restClock.textContent = clockText(Math.max(0, Math.ceil((rest.endMs - ms) / 1000)));
@@ -246,6 +254,20 @@ export function timerView(): View | null {
     pauseBtn.textContent = paused ? 'Reprendre' : 'Pause';
     roundBar.hidden = finishBtn.hidden = runBar.hidden = done;
     scoreBtn.hidden = discardBtn.hidden = !done;
+  }
+
+  /** Avance ou retard sur le plan de course, au dernier segment validé. */
+  function paintPace(): void {
+    const reached = targets.slice(0, marks.length);
+    const last = marks.at(-1);
+    if (!planned || last === undefined || reached.some((target) => target === null)) {
+      paceEl.hidden = true;
+      return;
+    }
+    const diff = Math.floor(last / 1000) - reached.reduce<number>((sum, target) => sum + (target ?? 0), 0);
+    paceEl.hidden = false;
+    paceEl.className = `timer-pace ${diff <= 0 ? 'ahead' : 'behind'}`;
+    paceEl.textContent = diff === 0 ? 'Pile dans ton plan' : diff < 0 ? `En avance de ${clockText(-diff)} sur ton plan` : `En retard de ${clockText(diff)} sur ton plan`;
   }
 
   const wake = screenWake();

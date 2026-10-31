@@ -1,7 +1,8 @@
 import { clock, daysBetween, kg, plural, scoreLine } from './format';
 import { liftFor } from './lifts';
 import { repsPerRound, workKey } from './records';
-import type { Goal, GoalSummary, Result, WodGoal } from './types';
+import { DIVISIONS, isFullRace } from './race';
+import type { Goal, GoalSummary, RaceGoal, Result, WodGoal } from './types';
 
 const shortDate = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 const round = (value: number) => Math.round(value * 2) / 2;
@@ -29,16 +30,23 @@ export function goalTitle(goal: Goal): string {
       return `${goal.wod.title} : ${plural(goal.rounds ?? 0, 'tour')}${goal.extra_reps ? ` + ${plural(goal.extra_reps, 'rep')}` : ''}`;
     case 'free':
       return goal.title;
+    case 'race':
+      return `${goal.name ?? 'Course Hyrox'} sous ${clock(goal.target_sec)}`;
   }
 }
 
-/** « échéance le 15 déc., dans 42 jours », « échéance demain », « échéance aujourd'hui », « échéance dépassée ». */
-export function deadlineText(date: string, today: string): string {
+/**
+ * « échéance le 15 déc., dans 42 jours », « échéance demain », « échéance aujourd'hui »,
+ * « échéance dépassée » ; pour une course : « course le 14 mars, dans 134 jours »…
+ */
+export function deadlineText(date: string, today: string, race = false): string {
+  const word = race ? 'course' : 'échéance';
   const days = daysBetween(today, date);
   // Espaces insécables : « 42 jours » ne se coupe pas en fin de ligne.
-  if (days > 1) return `échéance le ${shortDate(date)}, dans ${days}\u00a0jours`;
-  if (days === 1) return 'échéance demain';
-  return days === 0 ? 'échéance aujourd’hui' : `échéance dépassée (${shortDate(date)})`;
+  if (days > 1) return `${word} le ${shortDate(date)}, dans ${days}\u00a0jours`;
+  if (days === 1) return `${word} demain`;
+  if (days === 0) return `${word} aujourd’hui`;
+  return race ? `course passée (${shortDate(date)})` : `échéance dépassée (${shortDate(date)})`;
 }
 
 function liftStatus(goal: Extract<Goal, { kind: 'lift' }>, results: Result[]): Omit<GoalStatus, 'goal' | 'title'> {
@@ -105,6 +113,24 @@ function wodStatus(goal: WodGoal, results: Result[]): Omit<GoalStatus, 'goal' | 
   };
 }
 
+/** Course : le meilleur temps sur une course complète en Rx (simulation ou course officielle). */
+function raceStatus(goal: RaceGoal, results: Result[]): Omit<GoalStatus, 'goal' | 'title'> {
+  const races = [...results]
+    .reverse()
+    .flatMap((result) => (result.score.rx && isFullRace(result.wod) && 'finished' in result.score && result.score.finished ? [{ date: result.date, sec: result.score.time_sec }] : []));
+  if (races.length === 0) return { progress: 0, current: 'pas encore de course complète', hint: 'Fais une simulation complète pour voir où tu en es.' };
+  const best = Math.min(...races.map((race) => race.sec));
+  const last = races.at(-1)!;
+  const achievedOn = races.find((race) => race.sec <= goal.target_sec)?.date;
+  return {
+    progress: Math.min(1, goal.target_sec / best),
+    current: `meilleure course complète ${clock(best)}`,
+    ...(best > goal.target_sec && { remaining: `encore ${clock(best - goal.target_sec)} à gagner` }),
+    ...(last.sec !== best && { hint: `dernière : ${clock(last.sec)} le ${shortDate(last.date)}` }),
+    ...(achievedOn && { achievedOn }),
+  };
+}
+
 /** Avancement d'un objectif, d'après les séances (de la plus récente à la plus ancienne). */
 export function goalStatus(goal: Goal, results: Result[]): GoalStatus {
   const title = goalTitle(goal);
@@ -115,6 +141,8 @@ export function goalStatus(goal: Goal, results: Result[]): GoalStatus {
       return { goal, title, ...wodStatus(goal, results) };
     case 'free':
       return { goal, title, ...(goal.done_on && { achievedOn: goal.done_on }) };
+    case 'race':
+      return { goal, title, ...raceStatus(goal, results) };
   }
 }
 
@@ -140,7 +168,8 @@ export function newlyAchieved(goals: readonly Goal[], before: Result[], after: R
 export function goalSummary(status: GoalStatus): GoalSummary {
   const { goal } = status;
   return {
-    goal: status.title,
+    // Une course part avec sa catégorie : le coach en déduit les charges des stations.
+    goal: goal.kind === 'race' ? `${status.title} (Hyrox ${DIVISIONS[goal.division]})` : status.title,
     ...(goal.date && { deadline: goal.date }),
     ...(status.current && { current: status.current }),
     ...(status.remaining && { remaining: status.remaining }),

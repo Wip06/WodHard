@@ -1,14 +1,16 @@
+import { coachReady, loadCoach } from '../claude';
 import { choose, h, toast } from '../dom';
-import { dateLabel, kg, scoreLine, setText, today } from '../format';
+import { clock, dateLabel, decimal, kg, scoreLine, setText, today } from '../format';
 import { deadlineText, goalStatus, type GoalStatus } from '../goals';
 import { liftFor, liftsOf } from '../lifts';
-import { canonicalName, nameKey } from '../movements';
+import { canonicalName, isRest, nameKey } from '../movements';
+import { DIVISIONS, isFullRace, racePlan, raceSegments, raceTargets } from '../race';
 import { workKey } from '../records';
 import { navigate, type View } from '../router';
 import { deleteGoal, findGoal, findWod, getWods, goalStatuses, newId, saveGoal, sortedResults } from '../store';
-import type { Goal, SavedWod } from '../types';
+import type { Division, Goal, RaceGoal, SavedWod } from '../types';
 import { validateGoal } from '../validate';
-import { field, pageHead } from './parts';
+import { deltaChip, field, openChat, pageHead } from './parts';
 
 /** Objectifs atteints depuis moins de tant de jours, encore montrés avec ceux en cours. */
 const RECENT_DAYS = 30;
@@ -25,7 +27,7 @@ const goalWods = () =>
 function statusLine(status: GoalStatus): string {
   if (status.achievedOn) return `Atteint le ${dateLabel(status.achievedOn)}`;
   const { goal } = status;
-  return [status.current, status.remaining, goal.date && deadlineText(goal.date, today())].filter(Boolean).join(' · ');
+  return [status.current, status.remaining, goal.date && deadlineText(goal.date, today(), goal.kind === 'race')].filter(Boolean).join(' · ');
 }
 
 function meter(progress: number): HTMLElement {
@@ -74,6 +76,74 @@ export function goalLinks(match: (goal: Goal) => boolean): HTMLElement | false {
 export const sameWorkGoal = (wod: SavedWod['wod']) => (goal: Goal) => goal.kind === 'wod' && workKey(goal.wod) === workKey(wod);
 export const sameLiftGoal = (key: string) => (goal: Goal) => goal.kind === 'lift' && nameKey(canonicalName(goal.exercise)) === key;
 
+/** « Course 3 · 1 km », « Sled push · 50 m », « Wall ball · 100 reps ». */
+function segmentLabel(name: string, distance?: number, reps?: number, run?: number): string {
+  if (run !== undefined) return `Course ${run} · 1 km`;
+  return `${name} · ${distance !== undefined ? `${decimal(distance)} m` : `${reps ?? 0} reps`}`;
+}
+
+/**
+ * Plan de course : le temps visé sur chaque segment et le temps cumulé. Avec une course complète
+ * déjà faite et chronométrée segment par segment, chaque temps est comparé au plan.
+ */
+function racePlanSection(goal: RaceGoal): HTMLElement {
+  const plan = racePlan(goal.target_sec);
+  const segments = raceSegments();
+  const targets = raceTargets(goal.target_sec);
+  const last = sortedResults().find((result) => isFullRace(result.wod) && 'splits_sec' in result.score && result.score.splits_sec !== undefined);
+  // Temps de la dernière course, segment par segment, repos mis à part.
+  const actual: number[] = [];
+  if (last && last.wod.type === 'hyrox' && 'splits_sec' in last.score && last.score.splits_sec) {
+    const splits = last.score.splits_sec;
+    last.wod.segments.forEach((segment, i) => {
+      const sec = splits[i];
+      if (!isRest(segment) && sec !== undefined) actual.push(sec);
+    });
+  }
+  const complete = actual.length === segments.length;
+  let cumulative = 0;
+  let run = 0;
+  const stationTotal = [...plan.stations.values()].reduce((sum, sec) => sum + sec, 0);
+  return h(
+    'section',
+    { class: 'dash-block' },
+    h('h2', { class: 'dash-title' }, 'Plan de course'),
+    h('p', { class: 'dash-note' }, `Course : ${clock(Math.round(plan.runPerKm))} par km, transition comprise · stations : ${clock(Math.round(stationTotal))} au total.`),
+    complete && last && h('p', { class: 'dash-note' }, `Comparé à ta course complète du ${dateLabel(last.date)}`),
+    h(
+      'ol',
+      { class: 'race-plan' },
+      segments.map((segment, i) => {
+        const target = targets[i] ?? 0;
+        cumulative += target;
+        const isRun = segment.name === 'Run';
+        if (isRun) run++;
+        const done = complete ? actual[i] : undefined;
+        const diff = done === undefined ? null : done - target;
+        return h(
+          'li',
+          { class: isRun ? 'run' : 'station' },
+          h(
+            'span',
+            { class: 'what' },
+            segmentLabel(segment.name, segment.distance_m, segment.reps, isRun ? run : undefined),
+            done !== undefined &&
+              diff !== null &&
+              h('span', { class: 'race-actual' }, `fait en ${clock(done)}`, deltaChip({ text: diff === 0 ? '=' : `${diff < 0 ? '−' : '+'}${clock(Math.abs(diff))}`, better: diff === 0 ? null : diff < 0 })),
+          ),
+          h('span', { class: 'race-target' }, clock(target)),
+          h('span', { class: 'race-total' }, clock(cumulative)),
+        );
+      }),
+    ),
+    h('p', { class: 'dash-legend' }, 'Répartition type d’une course Hyrox : ajuste-la avec le coach selon tes points forts. En simulation, le chrono te dit si tu es en avance ou en retard sur ce plan.'),
+  );
+}
+
+/** Message au coach pour préparer la course. */
+const raceRequest = (goal: RaceGoal) =>
+  `Prépare-moi pour ${goal.name ? `la course ${goal.name}` : 'ma course Hyrox'} du ${dateLabel(goal.date)}, en ${DIVISIONS[goal.division]}, avec l’objectif de finir en ${clock(goal.target_sec)}. Je veux un programme jusqu’à la course, avec des simulations (dont une course complète aux charges de ma catégorie) et un affûtage la dernière semaine.`;
+
 /** Un objectif : où tu en es, comment y arriver, et de quoi le modifier ou le cocher. */
 export function goalView(id: string): View | null {
   const goal = findGoal(id);
@@ -119,13 +189,16 @@ export function goalView(id: string): View | null {
       status.progress !== undefined && !status.achievedOn && meter(status.progress),
       status.remaining && !status.achievedOn && h('p', { class: 'compare' }, status.remaining),
       status.hint && h('p', { class: 'compare' }, status.hint),
-      goal.date && !status.achievedOn && h('p', { class: `compare ${goal.date < today() ? 'late' : ''}` }, deadlineText(goal.date, today())),
+      goal.kind === 'race' && h('p', { class: 'compare' }, `Hyrox ${DIVISIONS[goal.division]}`),
+      goal.date && !status.achievedOn && h('p', { class: `compare ${goal.date < today() ? 'late' : ''}` }, deadlineText(goal.date, today(), goal.kind === 'race')),
       goal.kind === 'free' && !status.achievedOn && h('p', { class: 'compare' }, 'Coche-le quand c’est fait.'),
     ),
     goal.notes && h('p', { class: 'description' }, goal.notes),
+    goal.kind === 'race' && racePlanSection(goal),
     h(
       'div',
       { class: 'stack' },
+      goal.kind === 'race' && coachReady(loadCoach()) && h('button', { class: 'btn primary block', onclick: () => openChat(raceRequest(goal)) }, 'Préparer la course avec le coach'),
       goal.kind === 'free' &&
         (goal.done_on
           ? h('button', { class: 'btn block', onclick: () => setDone(false) }, 'Finalement pas encore')
@@ -139,7 +212,7 @@ export function goalView(id: string): View | null {
 }
 
 type Kind = Goal['kind'];
-const KIND_LABELS: Record<Kind, string> = { lift: 'Charge', wod: 'WOD', free: 'Autre' };
+const KIND_LABELS: Record<Kind, string> = { lift: 'Charge', wod: 'WOD', race: 'Course', free: 'Autre' };
 
 /**
  * Formulaire d'un objectif. `preset` pré-remplit un nouvel objectif depuis une fiche : « wod:<id> »
@@ -224,14 +297,39 @@ export function goalFormView(id?: string, preset?: string): View | null {
   title.value = editing?.kind === 'free' ? editing.title : '';
   const freePanel = h('div', { class: 'stack' }, field('Objectif', title), h('p', { class: 'hint left' }, 'Tu le coches toi-même quand c’est fait.'));
 
+  // Course Hyrox
+  const raceName = h('input', { type: 'text', autocomplete: 'off', maxlength: 60, placeholder: 'Hyrox Paris', 'aria-label': 'Nom de la course' });
+  raceName.value = editing?.kind === 'race' ? (editing.name ?? '') : '';
+  const division = h(
+    'select',
+    { 'aria-label': 'Catégorie' },
+    h('option', { value: '' }, 'Choisir…'),
+    (Object.keys(DIVISIONS) as Division[]).map((value) => h('option', { value, selected: editing?.kind === 'race' && editing.division === value }, DIVISIONS[value])),
+  );
+  const hours = h('input', { type: 'number', inputmode: 'numeric', min: 0, step: 1, 'aria-label': 'Heures' });
+  const raceMinutes = h('input', { type: 'number', inputmode: 'numeric', min: 0, max: 59, step: 1, 'aria-label': 'Minutes de course' });
+  if (editing?.kind === 'race') {
+    hours.value = String(Math.floor(editing.target_sec / 3600));
+    raceMinutes.value = String(Math.floor((editing.target_sec % 3600) / 60));
+  }
+  const racePanel = h(
+    'div',
+    { class: 'stack' },
+    field('Nom (facultatif)', raceName),
+    field('Catégorie', division),
+    field('Temps visé', hours, 'h', raceMinutes, 'min'),
+    h('p', { class: 'hint left' }, 'L’appli en tire un plan de course segment par segment, et te dit en simulation si tu es dans les temps.'),
+  );
+
   // Commun
   const date = h('input', { type: 'date', min: today(), 'aria-label': 'Échéance' });
+  const dateLabelEl = h('span', { class: 'field-label' });
   date.value = editing?.date ?? '';
   const notes = h('textarea', { rows: 2, 'aria-label': 'Notes', placeholder: 'Pourquoi, comment…' });
   notes.value = editing?.notes ?? '';
   const errorBox = h('div', { class: 'errors', role: 'alert', hidden: true });
 
-  const panels: Record<Kind, HTMLElement> = { lift: liftPanel, wod: wodPanel, free: freePanel };
+  const panels: Record<Kind, HTMLElement> = { lift: liftPanel, wod: wodPanel, race: racePanel, free: freePanel };
   const kinds = (Object.keys(KIND_LABELS) as Kind[]).map((value) =>
     h(
       'button',
@@ -248,7 +346,11 @@ export function goalFormView(id?: string, preset?: string): View | null {
       KIND_LABELS[value],
     ),
   );
-  const showPanel = () => (Object.keys(panels) as Kind[]).forEach((value) => (panels[value].hidden = value !== kind));
+  const showPanel = () => {
+    (Object.keys(panels) as Kind[]).forEach((value) => (panels[value].hidden = value !== kind));
+    // Une course a forcément une date.
+    dateLabelEl.textContent = kind === 'race' ? 'Date de la course' : 'Échéance (facultatif)';
+  };
   showPanel();
 
   const number = (input: HTMLInputElement) => (input.value.trim() === '' ? undefined : Number(input.value.trim().replace(',', '.')));
@@ -275,6 +377,9 @@ export function goalFormView(id?: string, preset?: string): View | null {
         ...(saved ? { wod_id: saved.id } : editing?.kind === 'wod' && editing.wod_id ? { wod_id: editing.wod_id } : {}),
         ...(wod?.type === 'amrap' ? { rounds: number(rounds) ?? 0, ...(number(extra) && { extra_reps: number(extra) }) } : { time_sec: time }),
       };
+    } else if (kind === 'race') {
+      const time = number(hours) === undefined && number(raceMinutes) === undefined ? undefined : (number(hours) ?? 0) * 3600 + (number(raceMinutes) ?? 0) * 60;
+      raw = { ...base, ...(raceName.value.trim() && { name: raceName.value.trim() }), division: division.value || undefined, target_sec: time };
     } else {
       raw = { ...base, title: title.value.trim(), ...(editing?.kind === 'free' && editing.done_on && { done_on: editing.done_on }) };
     }
@@ -302,8 +407,9 @@ export function goalFormView(id?: string, preset?: string): View | null {
       h('div', { class: 'segmented', role: 'group', 'aria-label': 'Sorte d’objectif' }, kinds),
       liftPanel,
       wodPanel,
+      racePanel,
       freePanel,
-      field('Échéance (facultatif)', date),
+      h('div', { class: 'field' }, dateLabelEl, h('div', { class: 'field-row' }, date)),
       h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notes (facultatif)'), notes),
       errorBox,
       h('button', { type: 'submit', class: 'btn primary big block' }, 'Enregistrer'),
@@ -322,7 +428,10 @@ const ERROR_LABELS: Record<string, string> = {
   rounds: 'Score à atteindre',
   extra_reps: 'Reps en plus',
   title: 'Objectif',
-  date: 'Échéance',
+  date: 'Date',
+  name: 'Nom',
+  division: 'Catégorie',
+  target_sec: 'Temps visé',
 };
 
 /** « load_kg : doit être un nombre > 0 » → « Charge visée : à remplir (un nombre > 0) ». */
@@ -332,6 +441,8 @@ function humanize(error: string): string {
   const key = path.replace(/[.[].*$/, '');
   const label = ERROR_LABELS[key];
   if (!label) return error;
-  if (message === 'champ manquant' || message === 'doit être un texte non vide' || message.startsWith('le WOD doit')) return `${label} : à remplir`;
+  if (message.startsWith('champ manquant') || message === 'doit être un texte non vide' || message.startsWith('le WOD doit') || message.startsWith('doit valoir "open')) {
+    return `${label} : à remplir`;
+  }
   return `${label} : ${message}`;
 }

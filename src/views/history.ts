@@ -51,7 +51,7 @@ export function resultView(id: string): View | null {
   const best = workout.find((other) => records.has(other.id));
 
   const remove = async () => {
-    const confirmed = await choose('Supprimer cette séance ?', `${wod.title}, ${dateLabel(result.date)}.`, [
+    const confirmed = await choose('Supprimer cette séance ?', `${wod.title}, ${dateLabel(result.date)}`, [
       { label: 'Supprimer', value: true, kind: 'danger' },
       { label: 'Annuler', value: false },
     ]);

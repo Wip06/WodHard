@@ -260,7 +260,19 @@ export interface FreeGoal extends GoalBase {
   done_on?: string;
 }
 
-export type Goal = LiftGoal | WodGoal | FreeGoal;
+export type Division = 'open_women' | 'open_men' | 'pro_women' | 'pro_men' | 'doubles_women' | 'doubles_men' | 'doubles_mixed';
+
+/** Une course Hyrox à une date, avec un temps visé : atteint par une course complète (8 × 1 km et 8 stations) en Rx. */
+export interface RaceGoal extends GoalBase {
+  kind: 'race';
+  /** « Hyrox Paris » ; facultatif. */
+  name?: string;
+  division: Division;
+  date: string;
+  target_sec: number;
+}
+
+export type Goal = LiftGoal | WodGoal | FreeGoal | RaceGoal;
 
 /** Un élément d'un programme collé : un WOD, éventuellement daté. */
 export interface ProgramItem {

@@ -213,7 +213,7 @@ export function activityView(id: string): View | null {
   const name = activityName(activity);
 
   const remove = async () => {
-    const confirmed = await choose('Supprimer cette activité ?', `${name}, ${dateLabel(activity.date)}.`, [
+    const confirmed = await choose('Supprimer cette activité ?', `${name}, ${dateLabel(activity.date)}`, [
       { label: 'Supprimer', value: true, kind: 'danger' },
       { label: 'Annuler', value: false },
     ]);
