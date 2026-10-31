@@ -9,6 +9,7 @@ import { cuesBetween, elapsedMs, frame, pause, resume, totalMs, type Frame } fro
 import type { Movement } from '../types';
 import { screenWake } from '../wake';
 import { movementList } from './parts';
+import { strengthTimerView } from './strengthTimer';
 
 const TICK_MS = 100;
 /** Au-delà de cet écart entre deux rafraîchissements (appli en arrière-plan), les bips manqués sont ignorés. */
@@ -24,7 +25,10 @@ const REST_BEEPS = [3, 2, 1];
 export function timerView(): View | null {
   const initial = getSession();
   if (!initial || initial.stage !== 'timer') return null;
-  const { wod, wod_id } = initial;
+  // Une séance de force a son propre chrono, série par série.
+  if (initial.wod.type === 'strength') return strengthTimerView(initial, initial.wod);
+  const wod = initial.wod;
+  const { wod_id } = initial;
   let clock = initial.clock;
   let rounds = initial.rounds;
   const marks = [...initial.marks];

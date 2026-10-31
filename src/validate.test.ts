@@ -152,7 +152,7 @@ describe('validateWod', () => {
 
   it('refuse un type inconnu', () => {
     expect(errorsOf({ ...cindy, type: 'tabata' })).toEqual([
-      'type : doit valoir "amrap", "emom", "for_time" ou "hyrox"',
+      'type : doit valoir "amrap", "emom", "for_time", "hyrox" ou "strength"',
     ]);
   });
 

@@ -1,12 +1,12 @@
 import { choose, h, offerFile, toast } from '../dom';
-import { adjustmentText, dateLabel, scoreLine } from '../format';
+import { adjustmentText, dateLabel, scoreLine, setsLine } from '../format';
 import { coachReady, loadCoach } from '../claude';
 import { navigate, type View } from '../router';
 import { isOverCap, lastSplits, scoreDelta } from '../records';
 import { sessionCard, sessionFileName } from '../sessionCard';
 import { sessionImageFile } from '../sessionImage';
 import { currentRecords, deleteResult, findResult, findWod, sameWorkout, sortedActivities, sortedResults } from '../store';
-import { activityRow, askAdvice, deltaChip, pageHead, resultRow, splitsList, wodSheet } from './parts';
+import { activityRow, askAdvice, deltaChip, pageHead, resultRow, rxChip, splitsList, wodSheet } from './parts';
 
 /**
  * Toutes les séances, WOD et autres sports, de la plus récente à la plus ancienne. On y retrouve
@@ -73,7 +73,7 @@ export function resultView(id: string): View | null {
         { class: 'result-line' },
         isRecord && h('span', { class: 'chip pr' }, 'Record'),
         isOverCap(wod, score) && h('span', { class: 'chip late' }, 'Hors cap'),
-        h('span', { class: `chip ${score.rx ? 'rx' : ''}` }, score.rx ? 'Rx' : 'Scaled'),
+        rxChip(wod, score),
         score.rpe !== undefined && h('span', { class: 'chip' }, `RPE ${score.rpe}/10`),
       ),
       previous &&
@@ -84,6 +84,20 @@ export function resultView(id: string): View | null {
           delta && deltaChip(delta),
         ),
       best && !isRecord && h('p', { class: 'compare' }, `Record : ${scoreLine(best.wod, best.score)}, ${dateLabel(best.date)}`),
+      'exercises' in score &&
+        wod.type === 'strength' &&
+        h(
+          'div',
+          { class: 'adjustments' },
+          h('span', { class: 'field-label' }, 'Séries'),
+          h(
+            'ul',
+            null,
+            wod.exercises.map((exercise, i) =>
+              h('li', null, h('strong', null, exercise.name), ` : ${setsLine(score.exercises[i] ?? [], exercise.load_count)}`),
+            ),
+          ),
+        ),
       score.adjustments &&
         score.adjustments.length > 0 &&
         h(

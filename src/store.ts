@@ -1,9 +1,10 @@
 import { toast } from './dom';
 import { addDays, mondayOf, today } from './format';
+import { liftsOf } from './lifts';
 import { knownNames, normalizeWod } from './movements';
 import { recordIds, workKey } from './records';
 import type { Clock } from './timer';
-import type { Activity, AppData, Backup, HistoryExport, PlanEntry, ProgramItem, Result, SavedWod, Wod } from './types';
+import type { Activity, AppData, Backup, HistoryExport, PlanEntry, ProgramItem, Result, SavedWod, StrengthSet, Wod } from './types';
 import { isDate, isObj, validateBackup, validateWod } from './validate';
 
 export const DATA_KEY = 'wodhard:data';
@@ -16,6 +17,18 @@ const SNOOZE_KEY = 'wodhard:backup-snooze';
 const BACKUP_MAX_SESSIONS = 5;
 const BACKUP_MAX_DAYS = 14;
 const BACKUP_SNOOZE_DAYS = 3;
+/** Exercices de force dont les repères partent au coach. */
+const LIFTS_SENT = 20;
+
+/** Séance de force en cours : séries faites, exercice en cours, repos en cours. */
+export interface StrengthProgress {
+  /** Séries faites, une liste par exercice du WOD. */
+  done: StrengthSet[][];
+  /** Exercice en cours, à partir de 0. */
+  exercise: number;
+  /** Fin du repos en cours (Date.now()), ou null hors repos. Le repos continue appli fermée. */
+  restUntil: number | null;
+}
 
 interface SessionBase {
   wod: Wod;
@@ -24,6 +37,8 @@ interface SessionBase {
   rounds: number;
   /** Temps de passage (ms depuis le départ) à la fin de chaque tour ou segment validé au chrono. */
   marks: number[];
+  /** Séance de force : séries notées au chrono. */
+  strength?: StrengthProgress;
 }
 
 /**
@@ -376,6 +391,18 @@ export function buildHistory(limit?: number): HistoryExport {
   if (planned.length > 0) history.planned = planned.map(({ entry, saved }) => ({ date: entry.date, wod: saved.wod }));
   const activities = sortedActivities().slice(0, limit).reverse();
   if (activities.length > 0) history.activities = activities.map(({ id: _id, ...activity }) => activity);
+  // Repères de charge sur tout l'historique, pas seulement les séances envoyées.
+  const lifts = liftsOf(sortedResults()).slice(0, LIFTS_SENT);
+  if (lifts.length > 0) {
+    history.lifts = lifts.map((lift) => {
+      const last = lift.sessions.at(-1);
+      return {
+        name: lift.name,
+        ...(lift.best && { one_rep_max_kg: Math.round(lift.best.oneRepMax * 2) / 2, best_set: { ...lift.best.set, date: lift.best.date } }),
+        ...(last && { last: { date: last.date, sets: last.sets } }),
+      };
+    });
+  }
   return history;
 }
 
@@ -454,6 +481,24 @@ export function setSession(next: Session | null): void {
   write(SESSION_KEY, next ? JSON.stringify(next) : null);
 }
 
+const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+/** Relit la progression d'une séance de force enregistrée ; ce qui ne colle pas au WOD est écarté. */
+function readStrength(raw: unknown, wod: Wod): StrengthProgress | undefined {
+  if (!isObj(raw) || wod.type !== 'strength' || !Array.isArray(raw.done) || raw.done.length !== wod.exercises.length) return undefined;
+  const done = raw.done.map((sets) =>
+    (Array.isArray(sets) ? sets : []).filter(isObj).map((set) => {
+      const kept: StrengthSet = {};
+      if (isCount(set.reps)) kept.reps = set.reps;
+      if (isCount(set.duration_sec)) kept.duration_sec = set.duration_sec;
+      if (isCount(set.load_kg)) kept.load_kg = set.load_kg;
+      return kept;
+    }),
+  );
+  const exercise = isCount(raw.exercise) ? Math.min(Math.floor(raw.exercise), wod.exercises.length - 1) : 0;
+  return { done, exercise, restUntil: typeof raw.restUntil === 'number' ? raw.restUntil : null };
+}
+
 function readSession(raw: unknown): Session | null {
   if (!isObj(raw)) return null;
   const wod = validateWod(raw.wod);
@@ -461,7 +506,14 @@ function readSession(raw: unknown): Session | null {
   if (!wod.ok || typeof rounds !== 'number' || !Number.isInteger(rounds) || rounds < 0) return null;
   const marks: number[] =
     Array.isArray(raw.marks) && raw.marks.every((mark) => typeof mark === 'number') ? raw.marks : [];
-  const base = { wod: wod.value, rounds, marks, ...(typeof raw.wod_id === 'string' && { wod_id: raw.wod_id }) };
+  const strength = readStrength(raw.strength, wod.value);
+  const base = {
+    wod: wod.value,
+    rounds,
+    marks,
+    ...(typeof raw.wod_id === 'string' && { wod_id: raw.wod_id }),
+    ...(strength && { strength }),
+  };
 
   if (raw.stage === 'timer') {
     const clock = raw.clock;

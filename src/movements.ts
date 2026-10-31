@@ -1,4 +1,17 @@
-import type { Movement, Wod } from './types';
+import type { Exercise, Movement, Wod } from './types';
+
+/** Un exercice de force vu comme un mouvement : sa première série et sa charge la plus lourde. */
+function exerciseMovement(exercise: Exercise): Movement {
+  const sets = Array.isArray(exercise.sets) ? exercise.sets : [exercise];
+  const loads = sets.flatMap((set) => (set.load_kg === undefined ? [] : [set.load_kg]));
+  const [first] = sets;
+  const movement: Movement = { name: exercise.name };
+  if (first?.reps !== undefined) movement.reps = first.reps;
+  else if (first?.duration_sec !== undefined) movement.duration_sec = first.duration_sec;
+  if (loads.length > 0) movement.load_kg = Math.max(...loads);
+  if (exercise.load_count !== undefined) movement.load_count = exercise.load_count;
+  return movement;
+}
 
 /** Tous les mouvements d'un WOD dans l'ordre : c'est la numérotation des adaptations (`index`). */
 export function allMovements(wod: Wod): Movement[] {
@@ -7,6 +20,8 @@ export function allMovements(wod: Wod): Movement[] {
       return wod.slots.flat();
     case 'hyrox':
       return wod.segments;
+    case 'strength':
+      return wod.exercises.map(exerciseMovement);
     default:
       return wod.movements;
   }
@@ -61,6 +76,25 @@ const MOVEMENTS: Record<string, string[]> = {
   'Muscle-up': [],
   'Sit-up': ['abdos', 'relevé de buste', 'relevés de buste'],
   Plank: ['gainage', 'planche'],
+  'Incline bench press': ['développé incliné', 'développé couché incliné'],
+  'Dumbbell bench press': ['développé couché haltères', 'développé haltères'],
+  'Barbell row': ['rowing barre', 'tirage buste penché', 'rowing buste penché'],
+  'Dumbbell row': ['rowing haltère', 'rowing unilatéral'],
+  'Lat pulldown': ['tirage vertical', 'tirage poitrine', 'tirage nuque'],
+  'Seated cable row': ['tirage horizontal', 'rowing poulie'],
+  'Leg press': ['presse à cuisses', 'presse à cuisse'],
+  'Leg extension': ['extension des jambes', 'leg extensions'],
+  'Leg curl': ['curl ischios', 'leg curls'],
+  'Romanian deadlift': ['rdl', 'soulevé de terre roumain'],
+  'Hip thrust': ['hip thrusts', 'pont fessier lesté'],
+  'Bulgarian split squat': ['fente bulgare', 'fentes bulgares', 'squat bulgare'],
+  'Dumbbell curl': ['curl haltères', 'curl biceps', 'curl haltère'],
+  'Barbell curl': ['curl barre'],
+  'Triceps pushdown': ['extension triceps poulie', 'poulie triceps'],
+  'Skull crusher': ['barre au front', 'extension triceps barre'],
+  'Lateral raise': ['élévations latérales', 'élévation latérale'],
+  'Calf raise': ['mollets', 'extension mollets', 'extensions mollets'],
+  Dips: ['dip'],
   Repos: ['rest', 'récupération', 'récup', 'pause'],
 };
 
@@ -90,6 +124,21 @@ function index(table: Record<string, string[]>): Map<string, string> {
   return new Map(
     Object.entries(table).flatMap(([canonical, variants]) => [canonical, ...variants].map((variant) => [nameKey(variant), canonical])),
   );
+}
+
+/** Variantes qui désigneraient deux noms différents : la liste doit rester vide (vérifié par les tests). */
+export function aliasConflicts(): string[] {
+  return [MOVEMENTS, EQUIPMENT].flatMap((table) => {
+    const seen = new Map<string, string>();
+    return Object.entries(table).flatMap(([canonical, variants]) =>
+      [canonical, ...variants].flatMap((variant) => {
+        const key = nameKey(variant);
+        const other = seen.get(key);
+        seen.set(key, canonical);
+        return other && other !== canonical ? [`${variant} : ${other} / ${canonical}`] : [];
+      }),
+    );
+  });
 }
 
 const MOVEMENT_INDEX = index(MOVEMENTS);
@@ -159,6 +208,8 @@ export function normalizeWod(wod: Wod, known?: KnownNames): Wod {
       return { ...base, slots: base.slots.map((slot) => slot.map(fix)) };
     case 'hyrox':
       return { ...base, segments: base.segments.map(fix) };
+    case 'strength':
+      return { ...base, exercises: base.exercises.map((exercise) => ({ ...exercise, name: canonicalName(exercise.name, known?.movements) })) };
     default:
       return { ...base, movements: base.movements.map(fix) };
   }

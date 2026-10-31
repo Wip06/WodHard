@@ -8,17 +8,20 @@ import {
   duration,
   load,
   movementText,
+  plural,
   quantity,
   scoreLine,
+  setsLine,
   teamLabel,
   typeLabel,
   wodHeadline,
   wodSummary,
 } from '../format';
 import { isRest } from '../movements';
-import { isOverCap, splitDeltas, type Delta } from '../records';
+import { beyondPrescribed, isOverCap, splitDeltas, type Delta } from '../records';
 import { activityLine, activityName } from '../sports';
-import type { Activity, Movement, Result, Wod } from '../types';
+import { restOf } from '../strength';
+import type { Activity, Exercise, Movement, Result, Wod } from '../types';
 
 export function pageHead(title: string, back?: { href: string; label: string }): HTMLElement {
   return h(
@@ -174,7 +177,38 @@ export function wodPlan(wod: Wod, askable = false): HTMLElement {
         movementList(wod.segments, { askable }),
       );
     }
+    case 'strength':
+      return h(
+        'div',
+        { class: 'plan' },
+        h('p', { class: 'rule' }, 'Exercice après exercice, avec du repos entre les séries :'),
+        h('ul', { class: 'movements' }, wod.exercises.map((exercise) => exerciseItem(exercise, askable))),
+      );
   }
+}
+
+/** Un exercice de force : séries × reps, charge, repos et notes. */
+function exerciseItem(exercise: Exercise, askable: boolean): HTMLElement {
+  const detailed = Array.isArray(exercise.sets);
+  const amount = Array.isArray(exercise.sets)
+    ? plural(exercise.sets.length, 'série')
+    : `${exercise.sets} × ${exercise.reps ?? duration(exercise.duration_sec ?? 0)}`;
+  const weight = detailed ? null : load(exercise);
+  return h(
+    'li',
+    { class: 'movement' },
+    h('span', { class: 'qty' }, amount),
+    h(
+      'span',
+      { class: 'what' },
+      h('span', { class: 'name' }, exercise.name),
+      weight !== null && h('span', { class: 'load' }, weight),
+      Array.isArray(exercise.sets) && h('span', { class: 'note' }, setsLine(exercise.sets, exercise.load_count)),
+      h('span', { class: 'note' }, `Repos ${duration(restOf(exercise))}`),
+      exercise.notes && h('span', { class: 'note' }, exercise.notes),
+      askable && h('button', { type: 'button', class: 'how', onclick: () => askHow(exercise.name) }, 'Comment faire ?'),
+    ),
+  );
 }
 
 /** Écart avec une séance précédente : vert si c'est mieux, orange si c'est moins bien. */
@@ -285,6 +319,13 @@ export function activityRow(activity: Activity): HTMLElement {
   );
 }
 
+/** Rx, Rx+ quand la séance va au-delà du prescrit, ou Scaled. */
+export function rxChip(wod: Wod, score: Result['score']): HTMLElement {
+  if (!score.rx) return h('span', { class: 'chip' }, 'Scaled');
+  const plus = beyondPrescribed(wod, score);
+  return h('span', { class: `chip rx${plus ? ' plus' : ''}`, title: plus ? 'Plus que le prescrit' : undefined }, plus ? 'Rx+' : 'Rx');
+}
+
 export function resultRow(result: Result, withTitle = true, record = false): HTMLElement {
   const { score } = result;
   return h(
@@ -306,7 +347,7 @@ export function resultRow(result: Result, withTitle = true, record = false): HTM
         h('span', { class: 'score' }, scoreLine(result.wod, score)),
         record && h('span', { class: 'chip pr' }, 'PR'),
         isOverCap(result.wod, score) && h('span', { class: 'chip late' }, 'Hors cap'),
-        h('span', { class: `chip ${score.rx ? 'rx' : ''}` }, score.rx ? 'Rx' : 'Scaled'),
+        rxChip(result.wod, score),
         score.rpe !== undefined && h('span', { class: 'chip' }, `RPE ${score.rpe}`),
       ),
     ),

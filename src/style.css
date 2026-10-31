@@ -14,6 +14,7 @@
   --emom: #5cc8ff;
   --for-time: #ff9f43;
   --hyrox: #c79bff;
+  --strength: #ff7aa8;
   --good: #4ade80;
   --radius: 14px;
   --gutter: 16px;
@@ -314,6 +315,10 @@ a {
   --tone: var(--hyrox);
 }
 
+.badge.strength {
+  --tone: var(--strength);
+}
+
 .badge.team {
   --tone: var(--good);
 }
@@ -342,6 +347,14 @@ a {
 .chip.rx {
   border-color: color-mix(in srgb, var(--accent) 50%, transparent);
   color: var(--accent);
+}
+
+/* Rx+ : au-delà du prescrit, mis en valeur. */
+.chip.rx.plus {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 800;
 }
 
 .chip.pr {
@@ -1914,4 +1927,159 @@ textarea {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
+}
+
+/* Chrono de force : série par série */
+
+.timer.strength .timer-clock {
+  font-size: clamp(3.5rem, 22vw, 8rem);
+}
+
+.timer.strength[data-resting] .timer-clock,
+.timer.strength[data-resting] .timer-phase {
+  color: var(--emom);
+}
+
+.timer.strength[data-resting] .strength-card {
+  opacity: 0.75;
+}
+
+.timer.strength .timer-controls {
+  margin-top: auto;
+}
+
+.exercise-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.exercise-tab {
+  flex: none;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.exercise-tab span {
+  font-variant-numeric: tabular-nums;
+}
+
+.exercise-tab.current {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.exercise-tab.complete span {
+  color: var(--good);
+}
+
+.strength-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.exercise-name {
+  font-size: 1.5rem;
+  overflow-wrap: anywhere;
+}
+
+.strength-card .target {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.stepper {
+  display: grid;
+  grid-template-columns: 56px 1fr 56px;
+  align-items: center;
+  gap: 10px;
+}
+
+.stepper strong {
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.stepper .btn.icon {
+  width: 56px;
+  min-height: 56px;
+  font-size: 1.6rem;
+}
+
+.done-sets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.done-sets li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--good) 18%, transparent);
+  color: var(--good);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+/* Saisie des séries faites */
+
+.sets-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.set-row input {
+  flex: none;
+  width: 4.6em;
+  min-height: 44px;
+  padding: 8px;
+}
+
+/* Champs de charge en texte (pour accepter la virgule) : même allure que les champs numériques. */
+.set-row input,
+.field-row input[inputmode='decimal'] {
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.set-label {
+  min-width: 4.2em;
+  font-size: 0.9rem;
+}
+
+.set-row .btn.icon {
+  margin-left: auto;
+}
+
+.times {
+  color: var(--muted);
 }

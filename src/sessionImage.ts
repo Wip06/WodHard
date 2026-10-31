@@ -27,6 +27,7 @@ const TONES: Record<Tone, string> = {
   emom: '#5cc8ff',
   for_time: '#ff9f43',
   hyrox: '#c79bff',
+  strength: '#ff7aa8',
   accent: COLORS.accent,
   good: COLORS.good,
   warn: COLORS.warn,

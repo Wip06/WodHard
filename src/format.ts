@@ -1,7 +1,8 @@
 import { allMovements } from './movements';
-import type { Adjustment, Movement, Score, Wod, WodType } from './types';
+import { doneCount, plannedCount, volume } from './strength';
+import type { Adjustment, Exercise, Movement, Score, StrengthSet, Wod, WodType } from './types';
 
-const TYPE_LABELS: Record<WodType, string> = { amrap: 'AMRAP', emom: 'EMOM', for_time: 'For Time', hyrox: 'Hyrox' };
+const TYPE_LABELS: Record<WodType, string> = { amrap: 'AMRAP', emom: 'EMOM', for_time: 'For Time', hyrox: 'Hyrox', strength: 'Force' };
 
 const pad = (n: number) => String(n).padStart(2, '0');
 export const decimal = (n: number, digits = 2) => n.toLocaleString('fr-FR', { maximumFractionDigits: digits });
@@ -67,6 +68,8 @@ export function wodSummary(wod: Wod): string {
       const cap = wod.time_cap_sec === undefined ? '' : ` · cap ${duration(wod.time_cap_sec)}`;
       return `Enchaînement de ${plural(wod.segments.length, 'segment')}${cap}`;
     }
+    case 'strength':
+      return `${plural(wod.exercises.length, 'exercice')} · ${plural(plannedCount(wod), 'série')}`;
   }
 }
 
@@ -74,6 +77,12 @@ export function wodSummary(wod: Wod): string {
 export const wodHeadline = (wod: Wod) => (wod.team_size ? `${teamLabel(wod.team_size)} · ${wodSummary(wod)}` : wodSummary(wod));
 
 export function scoreLine(wod: Wod, score: Score): string {
+  if ('exercises' in score) {
+    const planned = wod.type === 'strength' ? `/${plannedCount(wod)}` : '';
+    const lifted = wod.type === 'strength' ? volume(wod, score) : 0;
+    const total = lifted > 0 ? ` · ${Math.round(lifted).toLocaleString('fr-FR')} kg soulevés` : '';
+    return `${doneCount(score)}${planned} séries${total}`;
+  }
   if ('rounds' in score) {
     const rounds = plural(score.rounds, 'tour');
     return score.extra_reps > 0 ? `${rounds} + ${plural(score.extra_reps, 'rep')}` : rounds;
@@ -156,4 +165,33 @@ export function adjustmentText(wod: Wod, adjustment: Adjustment): string {
     if (doneLoad !== null) changes.push(plannedLoad && plannedLoad !== doneLoad ? `${doneLoad} au lieu de ${plannedLoad}` : doneLoad);
   }
   return changes.length > 0 ? `${what} : ${changes.join(', ')}` : what;
+}
+
+/** Charge affichée : « 70 kg », ou « 2 × 24 kg » pour une paire. */
+const loadText = (load: number, count?: number) => (count === 2 ? `2 × ${kg(load)}` : kg(load));
+
+/** Une série : « 8 × 70 kg », « 8 reps », « 1 min ». */
+export function setText(set: StrengthSet, loadCount?: number): string {
+  const amount = set.reps !== undefined ? (set.load_kg === undefined ? plural(set.reps, 'rep') : String(set.reps)) : duration(set.duration_sec ?? 0);
+  return set.load_kg === undefined ? amount : `${amount} × ${loadText(set.load_kg, loadCount)}`;
+}
+
+/** Séries sur une ligne : « 8×70 · 8×70 · 7×70 kg », « 10 · 10 · 8 reps ». */
+export function setsLine(sets: StrengthSet[], loadCount?: number): string {
+  if (sets.length === 0) return 'aucune série';
+  const parts = sets.map((set) => {
+    const amount = set.reps !== undefined ? String(set.reps) : duration(set.duration_sec ?? 0);
+    return set.load_kg === undefined ? amount : `${amount}×${decimal(set.load_kg)}`;
+  });
+  const loaded = sets.some((set) => set.load_kg !== undefined);
+  const unit = loaded ? (loadCount === 2 ? ' kg par main' : ' kg') : sets.every((set) => set.reps !== undefined) ? ' reps' : '';
+  return parts.join(' · ') + unit;
+}
+
+/** Prescription d'un exercice : « 4 × 8 · 70 kg », « 3 × 1 min », ou le détail « 5×80 · 5×85 · 5×90 kg ». */
+export function exerciseSummary(exercise: Exercise): string {
+  if (Array.isArray(exercise.sets)) return setsLine(exercise.sets, exercise.load_count);
+  const amount = exercise.reps !== undefined ? String(exercise.reps) : duration(exercise.duration_sec ?? 0);
+  const head = `${exercise.sets} × ${amount}`;
+  return exercise.load_kg === undefined ? head : `${head} · ${loadText(exercise.load_kg, exercise.load_count)}`;
 }

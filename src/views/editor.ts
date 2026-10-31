@@ -1,8 +1,9 @@
 import { h, toast } from '../dom';
-import { teamLabel, typeLabel } from '../format';
+import { decimal, teamLabel, typeLabel } from '../format';
+import { DEFAULT_REST_SEC } from '../strength';
 import { navigate, type View } from '../router';
 import { addWod, findWod, updateWod } from '../store';
-import type { Movement, Wod, WodType } from '../types';
+import type { Exercise, Movement, Wod, WodType } from '../types';
 import { validateWod } from '../validate';
 import { field, pageHead } from './parts';
 
@@ -19,7 +20,21 @@ interface MovementDraft {
   notes: string;
 }
 
-/** État du formulaire. Les champs des quatre types cohabitent : changer de type ne perd rien. */
+/** Un exercice de force en cours de saisie. */
+interface ExerciseDraft {
+  name: string;
+  sets: string;
+  amount: string;
+  unit: 'reps' | 'duration_sec';
+  load: string;
+  pair: boolean;
+  rest: string;
+  /** Séries différentes, une par une : « 12×60, 10×65, 8×70 ». Remplace séries, reps et charge. */
+  detail: string;
+  notes: string;
+}
+
+/** État du formulaire. Les champs de tous les types cohabitent : changer de type ne perd rien. */
 interface Draft {
   type: WodType;
   title: string;
@@ -39,9 +54,10 @@ interface Draft {
   scheme: string;
   /** EMOM : une liste par slot. Autres types : seule la première liste sert. */
   lists: MovementDraft[][];
+  exercises: ExerciseDraft[];
 }
 
-const TYPES: WodType[] = ['amrap', 'emom', 'for_time', 'hyrox'];
+const TYPES: WodType[] = ['amrap', 'emom', 'for_time', 'hyrox', 'strength'];
 const UNITS: { value: Unit; label: string }[] = [
   { value: 'reps', label: 'reps' },
   { value: 'distance_m', label: 'mètres' },
@@ -66,6 +82,16 @@ const FIELD_LABELS: Record<string, string> = {
   team_size: 'Équipe',
 };
 const PART_LABELS: Record<string, string> = { name: 'nom', load_kg: 'charge', load_count: 'paire', notes: 'notes' };
+const EXERCISE_PARTS: Record<string, string> = {
+  name: 'nom',
+  sets: 'séries',
+  reps: 'répétitions',
+  duration_sec: 'durée',
+  load_kg: 'charge',
+  load_count: 'paire',
+  rest_sec: 'repos',
+  notes: 'notes',
+};
 const TEAM_SIZES = ['', '2', '3', '4'];
 
 const TITLE_MAX = 60;
@@ -76,6 +102,18 @@ const copyTitle = (title: string) => `${title.slice(0, TITLE_MAX - COPY_SUFFIX.l
 
 const emptyMovement = (): MovementDraft => ({ name: '', amount: '', unit: 'reps', load: '', pair: false, notes: '' });
 const isBlank = (m: MovementDraft) => [m.name, m.amount, m.load, m.notes].every((value) => value.trim() === '');
+const emptyExercise = (): ExerciseDraft => ({
+  name: '',
+  sets: '',
+  amount: '',
+  unit: 'reps',
+  load: '',
+  pair: false,
+  rest: String(DEFAULT_REST_SEC),
+  detail: '',
+  notes: '',
+});
+const isBlankExercise = (e: ExerciseDraft) => [e.name, e.sets, e.amount, e.load, e.detail, e.notes].every((value) => value.trim() === '');
 const text = (value: string) => (value.trim() === '' ? undefined : value.trim());
 const number = (value: string) => (value.trim() === '' ? undefined : Number(value.trim().replace(',', '.')));
 
@@ -101,6 +139,49 @@ function movementDraft(movement: Movement): MovementDraft {
   };
 }
 
+function exerciseDraft(exercise: Exercise): ExerciseDraft {
+  const draft: ExerciseDraft = {
+    name: exercise.name,
+    sets: '',
+    amount: '',
+    unit: exercise.duration_sec !== undefined ? 'duration_sec' : 'reps',
+    load: '',
+    pair: exercise.load_count === 2,
+    rest: String(exercise.rest_sec ?? DEFAULT_REST_SEC),
+    detail: '',
+    notes: exercise.notes ?? '',
+  };
+  if (Array.isArray(exercise.sets)) {
+    draft.detail = exercise.sets
+      .map((set) => `${set.reps ?? ''}${set.load_kg === undefined ? '' : `×${decimal(set.load_kg)}`}`)
+      .join(', ');
+  } else {
+    draft.sets = String(exercise.sets);
+    draft.amount = String(exercise.reps ?? exercise.duration_sec ?? '');
+    draft.load = exercise.load_kg === undefined ? '' : String(exercise.load_kg);
+  }
+  return draft;
+}
+
+/** « 12×60, 10×65, 8×70 » → une série par élément ; « 10 » seul = 10 reps sans charge. */
+function parseDetail(detail: string): Record<string, unknown>[] {
+  return detail
+    .split(/[,;]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const match = /^(\d+)\s*(?:[x×*]\s*(\d+(?:[.,]\d+)?)\s*(?:kg)?)?$/i.exec(item);
+      if (!match) return { reps: item };
+      return { reps: Number(match[1]), ...(match[2] && { load_kg: Number(match[2].replace(',', '.')) }) };
+    });
+}
+
+function exerciseRaw(e: ExerciseDraft): Record<string, unknown> {
+  const common = { name: e.name, load_count: e.pair ? 2 : undefined, rest_sec: number(e.rest), notes: text(e.notes) };
+  if (e.detail.trim() !== '') return { ...common, sets: parseDetail(e.detail) };
+  return { ...common, sets: number(e.sets), [e.unit]: number(e.amount), load_kg: number(e.load) };
+}
+
 function draftOf(wod?: Wod): Draft {
   const draft: Draft = {
     type: wod?.type ?? 'amrap',
@@ -119,6 +200,7 @@ function draftOf(wod?: Wod): Draft {
     rounds: '1',
     scheme: '',
     lists: [[emptyMovement()]],
+    exercises: [emptyExercise()],
   };
   switch (wod?.type) {
     case 'amrap':
@@ -139,6 +221,9 @@ function draftOf(wod?: Wod): Draft {
     case 'hyrox':
       [draft.capMin, draft.capSec] = minSec(wod.time_cap_sec);
       draft.lists = [wod.segments.map(movementDraft)];
+      break;
+    case 'strength':
+      draft.exercises = wod.exercises.map(exerciseDraft);
   }
   return draft;
 }
@@ -193,6 +278,8 @@ function rawOf(draft: Draft): Record<string, unknown> {
       };
     case 'hyrox':
       return { ...base, time_cap_sec: cap, segments: first };
+    case 'strength':
+      return { ...base, exercises: draft.exercises.map(exerciseRaw) };
   }
 }
 
@@ -210,6 +297,12 @@ function humanize(error: string): string {
   else if (message === 'aucun mouvement dans les slots') message = 'ajoute au moins un mouvement';
   else if (slots) message = `${slots[1]} intervalles décrits pour un total de ${slots[2]}`;
 
+  const exercise = /^exercises\[(\d+)\](?:\.(\w+))?(?:\[(\d+)\])?/.exec(path);
+  if (exercise) {
+    const [, index, part, set] = exercise;
+    const detail = set === undefined ? '' : `, série ${Number(set) + 1}`;
+    return `Exercice ${Number(index) + 1}${part ? ` (${EXERCISE_PARTS[part] ?? part}${detail})` : ''} : ${message}`;
+  }
   const item = /^(movements|segments|slots\[(\d+)\])\[(\d+)\](?:\.(\w+))?$/.exec(path);
   if (item) {
     const [, list, slot, index, part] = item;
@@ -323,7 +416,93 @@ export function editorView(id?: string, copy = false): View | null {
     );
   }
 
+  function exerciseCard(exercise: ExerciseDraft, index: number): HTMLElement {
+    const list = draft.exercises;
+    const move = (delta: number) => {
+      list.splice(index, 1);
+      list.splice(index + delta, 0, exercise);
+      renderLists();
+    };
+    const unit = h(
+      'select',
+      { 'aria-label': 'Unité' },
+      h('option', { value: 'reps', selected: exercise.unit === 'reps' }, 'reps'),
+      h('option', { value: 'duration_sec', selected: exercise.unit === 'duration_sec' }, 'secondes'),
+    );
+    unit.addEventListener('change', () => {
+      exercise.unit = unit.value === 'duration_sec' ? 'duration_sec' : 'reps';
+    });
+    const pair = h('input', { type: 'checkbox', checked: exercise.pair, 'aria-label': 'Paire de charges' });
+    pair.addEventListener('change', () => {
+      exercise.pair = pair.checked;
+    });
+    const icon = (label: string, symbol: string, disabled: boolean, onclick: () => void) =>
+      h('button', { type: 'button', class: 'btn icon', 'aria-label': label, disabled, onclick }, symbol);
+    return h(
+      'div',
+      { class: 'editor-card' },
+      h(
+        'div',
+        { class: 'editor-head' },
+        h('span', null, `Exercice ${index + 1}`),
+        h(
+          'span',
+          { class: 'row' },
+          icon('Monter', '↑', index === 0, () => move(-1)),
+          icon('Descendre', '↓', index === list.length - 1, () => move(1)),
+          icon('Supprimer', '✕', false, () => {
+            list.splice(index, 1);
+            renderLists();
+          }),
+        ),
+      ),
+      bind(exercise, 'name', { placeholder: 'Nom, par exemple Bench press', 'aria-label': 'Nom' }),
+      h(
+        'div',
+        { class: 'row' },
+        bind(exercise, 'sets', numeric('Séries', 'Séries')),
+        h('span', { class: 'times' }, '×'),
+        bind(exercise, 'amount', numeric('Répétitions ou durée', 'Reps')),
+        unit,
+      ),
+      h(
+        'div',
+        { class: 'row' },
+        bind(exercise, 'load', { ...numeric('Charge en kg', 'Charge kg'), inputmode: 'decimal' }),
+        h('label', { class: 'pair' }, pair, h('span', null, 'Paire')),
+      ),
+      field('Repos entre les séries', bind(exercise, 'rest', numeric('Repos en secondes', '90')), 's'),
+      bind(exercise, 'detail', {
+        placeholder: 'Séries différentes (facultatif) : 12×60, 10×65, 8×70',
+        'aria-label': 'Détail des séries',
+      }),
+      bind(exercise, 'notes', { placeholder: 'Notes, tempo, consignes (facultatif)', 'aria-label': 'Notes' }),
+    );
+  }
+
   function renderLists(): void {
+    if (draft.type === 'strength') {
+      listsEl.replaceChildren(
+        h(
+          'div',
+          { class: 'stack' },
+          draft.exercises.map((exercise, index) => exerciseCard(exercise, index)),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'btn block',
+              onclick: () => {
+                draft.exercises.push(emptyExercise());
+                renderLists();
+              },
+            },
+            '+ Ajouter un exercice',
+          ),
+        ),
+      );
+      return;
+    }
     if (draft.lists.length === 0) draft.lists.push([]);
     const emom = draft.type === 'emom';
     const noun = draft.type === 'hyrox' ? 'Segment' : 'Mouvement';
@@ -423,6 +602,11 @@ export function editorView(id?: string, copy = false): View | null {
       }
       case 'hyrox':
         typeEl.replaceChildren(field('Time cap (facultatif)', minutes('capMin'), 'min', secs('capSec'), 's'));
+        break;
+      case 'strength':
+        typeEl.replaceChildren(
+          h('p', { class: 'hint left' }, 'Chaque exercice a ses séries, ses répétitions (ou une durée), sa charge et son repos. Le chrono te guide série par série.'),
+        );
     }
   }
 
@@ -457,6 +641,7 @@ export function editorView(id?: string, copy = false): View | null {
     event.preventDefault();
     // Les lignes laissées entièrement vides sont retirées plutôt que signalées en erreur.
     draft.lists = draft.lists.map((list) => list.filter((movement) => !isBlank(movement)));
+    draft.exercises = draft.exercises.filter((exercise) => !isBlankExercise(exercise));
     renderLists();
 
     const checked = validateWod(rawOf(draft));

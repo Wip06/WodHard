@@ -69,7 +69,38 @@ export interface HyroxWod extends WodBase {
   time_cap_sec?: number;
 }
 
-export type Wod = AmrapWod | EmomWod | ForTimeWod | HyroxWod;
+/** Une série de force : des répétitions (ou une durée, pour un gainage), avec ou sans charge. */
+export interface StrengthSet {
+  reps?: number;
+  duration_sec?: number;
+  load_kg?: number;
+}
+
+/**
+ * Un exercice de force. Séries identiques : `sets` en donne le nombre, avec `reps` (ou
+ * `duration_sec`) et `load_kg` ; séries différentes (pyramide, montée en charge) : `sets` les
+ * détaille une par une.
+ */
+export interface Exercise {
+  name: string;
+  sets: number | StrengthSet[];
+  reps?: number;
+  duration_sec?: number;
+  load_kg?: number;
+  /** 2 pour une paire d'haltères ou de kettlebells : `load_kg` est la charge d'une main. */
+  load_count?: number;
+  /** Repos après chaque série, en secondes. */
+  rest_sec?: number;
+  notes?: string;
+}
+
+/** Séance de force ou de musculation : des exercices en séries, avec du repos entre elles. */
+export interface StrengthWod extends WodBase {
+  type: 'strength';
+  exercises: Exercise[];
+}
+
+export type Wod = AmrapWod | EmomWod | ForTimeWod | HyroxWod | StrengthWod;
 export type WodType = Wod['type'];
 
 interface ScoreBase {
@@ -121,7 +152,17 @@ export interface HyroxStopped extends ScoreBase {
 }
 
 export type HyroxScore = HyroxFinished | HyroxStopped;
-export type Score = AmrapScore | EmomScore | ForTimeScore | HyroxScore;
+
+/**
+ * Séance de force : les séries réellement faites, exercice par exercice (même ordre que le WOD).
+ * `duration_sec` : durée de la séance relevée au chrono.
+ */
+export interface StrengthScore extends ScoreBase {
+  exercises: StrengthSet[][];
+  duration_sec?: number;
+}
+
+export type Score = AmrapScore | EmomScore | ForTimeScore | HyroxScore | StrengthScore;
 
 export interface SavedWod {
   id: string;
@@ -187,4 +228,15 @@ export interface HistoryExport {
   planned?: { date: string; wod: Wod }[];
   /** Séances d'autres sports (course, vélo…), sans leur identifiant. */
   activities?: Omit<Activity, 'id'>[];
+  /** Charges de référence par exercice de force, pour prescrire les charges. */
+  lifts?: LiftSummary[];
+}
+
+/** Repères d'un exercice de force, envoyés au coach. */
+export interface LiftSummary {
+  name: string;
+  /** 1RM estimé (formule d'Epley) de la meilleure série. */
+  one_rep_max_kg?: number;
+  best_set?: StrengthSet & { date: string };
+  last?: { date: string; sets: StrengthSet[] };
 }

@@ -5,6 +5,7 @@ import { render, type View } from '../router';
 import { distanceText, SPORT_INFO } from '../sports';
 import { dashboard, DEFAULT_RPE, STREAK_MIN, type Dashboard, type Family } from '../stats';
 import { currentRecords, findWod, getPlan, sortedActivities, sortedResults } from '../store';
+import { liftsBlock } from './lifts';
 import { openChat, pageHead } from './parts';
 
 const PERIODS = [
@@ -347,6 +348,7 @@ export function progressView(): View {
     mixBlock(d),
     repeatedBlock(d),
     hyroxBlock(d),
+    liftsBlock(),
     sportsBlock(d),
     recordsBlock(d),
     coachReady(loadCoach()) &&

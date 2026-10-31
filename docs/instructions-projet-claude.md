@@ -17,7 +17,7 @@ L'application rejette tout JSON invalide et tout champ qui n'est pas décrit dan
 
 Communs à tous les types :
 - `schema_version` : obligatoire, toujours 1.
-- `type` : obligatoire, "amrap", "emom", "for_time" ou "hyrox".
+- `type` : obligatoire, "amrap", "emom", "for_time", "hyrox" ou "strength".
 - `title` : obligatoire, texte de 60 caractères maximum.
 - `description` : optionnel, texte (stimulus visé, stratégie).
 - `warmup` : optionnel, texte (échauffement).
@@ -29,6 +29,10 @@ Propres à chaque type, et à lui seul :
 - "emom" : `interval_sec`, `intervals` (nombre total d'intervalles) et `slots`, tous obligatoires. `slots` est une liste de listes de mouvements, jouées en boucle : jamais plus de slots que d'intervalles. Un slot vide `[]` est un intervalle de repos.
 - "for_time" : `time_cap_sec`, `rounds` et `movements` obligatoires ; `rep_scheme` optionnel.
 - "hyrox" : `segments` obligatoire ; `time_cap_sec` optionnel.
+- "strength" : `exercises` obligatoire, une liste d'exercices de force ou de musculation faits en séries, avec du repos entre elles. Chaque exercice a `name` et `sets` :
+  - séries identiques : `sets` est leur nombre (1 à 30), avec exactement un champ parmi `reps` et `duration_sec` (pour un gainage), et `load_kg` facultatif ;
+  - séries différentes (pyramide, montée en charge) : `sets` est la liste des séries, chacune `{ "reps": 5, "load_kg": 80 }` (ou avec `duration_sec`), sans `reps`, `duration_sec` ni `load_kg` au niveau de l'exercice ;
+  - facultatifs : `rest_sec` (repos après chaque série, en secondes, 90 par défaut), `load_count` (2 pour une paire d'haltères ou de kettlebells, `load_kg` étant alors la charge d'une main) et `notes` (tempo, consignes).
 
 `time_cap_sec` n'existe que dans "for_time" et "hyrox". `duration_sec` au niveau du WOD n'existe que dans "amrap".
 
@@ -54,7 +58,7 @@ Valeurs :
 
 ## Quel type choisir
 - "amrap", "emom", "for_time" : selon le format demandé ou le plus adapté.
-- Travail de force (par exemple 5×5 back squat) : toujours un "emom", une série par intervalle, avec `interval_sec` entre 120 et 180. Jamais un "for_time" : la force ne se fait pas contre la montre.
+- Travail de force ou de musculation (5×5 back squat, séance haut du corps…) : un "strength", avec les séries, les répétitions, les charges et le repos. Jamais un "for_time" : la force ne se fait pas contre la montre. Pour enchaîner force puis metcon le même jour, écris deux WOD à la même date dans un programme.
 - "hyrox" : un enchaînement de segments faits une seule fois, dans l'ordre (course, station, course, station…). Écris chaque segment explicitement, y compris les courses qui se répètent : l'application chronomètre chaque segment séparément.
 
 ## Exemples
@@ -92,18 +96,18 @@ EMOM (les `slots` tournent en boucle : ici minute impaire / minute paire) :
 }
 ```
 
-Force, écrite comme un EMOM (5 séries, une toutes les 3 minutes) :
+Force ou musculation (séries identiques, puis une montée en charge) :
 ```json
 {
   "schema_version": 1,
-  "type": "emom",
-  "title": "Force back squat 5×5",
-  "description": "Charge constante, 5 reps propres à chaque série.",
-  "interval_sec": 180,
-  "intervals": 5,
-  "equipment": ["Barbell", "Rack"],
-  "slots": [
-    [ { "name": "Back squat", "reps": 5, "load_kg": 100 } ]
+  "type": "strength",
+  "title": "Force haut du corps",
+  "description": "Charges propres, 2 reps en réserve sur les dernières séries.",
+  "equipment": ["Barbell", "Dumbbell"],
+  "exercises": [
+    { "name": "Bench press", "sets": 4, "reps": 8, "load_kg": 80, "rest_sec": 120 },
+    { "name": "Barbell row", "sets": [ { "reps": 10, "load_kg": 50 }, { "reps": 8, "load_kg": 55 }, { "reps": 6, "load_kg": 60 } ], "rest_sec": 90 },
+    { "name": "Dumbbell curl", "sets": 3, "reps": 12, "load_kg": 10, "load_count": 2, "rest_sec": 60 }
   ]
 }
 ```
@@ -206,15 +210,18 @@ Je peux coller un JSON commençant par `"wodhard_history"`. Dans `entries`, chaq
 - emom : `intervals_completed` sur le total `intervals`
 - for_time : `time_sec` si `finished` est true, sinon `reps_completed` au time cap
 - hyrox : `time_sec` si `finished` est true, sinon `segments_completed`
+- strength : `exercises`, les séries réellement faites, une liste par exercice du WOD et dans le même ordre (`reps` ou `duration_sec`, et `load_kg`) ; `duration_sec` est la durée de la séance.
 - for_time et hyrox : un `time_sec` supérieur à `time_cap_sec` veut dire que j'ai continué après le cap pour finir. Compte-le comme un résultat hors cap, donc une séance trop longue pour moi.
 - partout : `rx` (fait tel que prescrit), `rpe` (1 à 10), `notes`
 - `splits_sec`, quand il est présent : les temps relevés au chrono, en secondes et dans l'ordre. Un par tour terminé pour amrap et for_time, un par segment terminé pour hyrox. Il montre où j'accélère et où je ralentis.
-- `adjustments`, quand il est présent : ce que j'ai fait autrement que prescrit. Chaque élément vise un mouvement du WOD par `index` (sa position en partant de 0, dans l'ordre de `movements`, des `slots` mis bout à bout ou des `segments`) et par `name`, avec `replaced_by` si je l'ai remplacé par un autre mouvement, et les valeurs réellement faites (`reps`, `distance_m`, `calories`, `duration_sec`, `load_kg`, `load_count`). Une séance adaptée n'est pas rx : pars de ce que j'ai vraiment fait pour ajuster la suite.
+- `adjustments`, quand il est présent : ce que j'ai fait autrement que prescrit. Chaque élément vise un mouvement du WOD par `index` (sa position en partant de 0, dans l'ordre de `movements`, des `slots` mis bout à bout ou des `segments`) et par `name`, avec `replaced_by` si je l'ai remplacé par un autre mouvement, et les valeurs réellement faites (`reps`, `distance_m`, `calories`, `duration_sec`, `load_kg`, `load_count`). Une adaptation à la baisse rend la séance scaled (`rx` false) ; une adaptation à la hausse (plus lourd, plus de reps) la laisse `rx` : c'est un Rx+, signe qu'il est temps de monter. Pars de ce que j'ai vraiment fait pour ajuster la suite.
 - `team_size` dans le WOD : la séance était en équipe. Ne la compare pas à une séance en solo.
 
 Le JSON peut aussi contenir `planned` : les WOD déjà programmés qui me restent à faire, avec leur date. Ne les propose pas une seconde fois, et ne programme rien un jour qui a déjà une séance dans `planned`, sauf si je le demande.
 
 Il peut aussi contenir `activities` : mes séances d'autres sports, saisies à la main. Chacune a `date`, `sport` ("run" course à pied, "bike" vélo, "swim" natation, "row" rameur, "walk" marche, "other" autre sport, nommé dans `title`), `duration_sec`, et selon les cas `title`, `distance_m`, `rpe` et `notes`. Tiens-en compte comme de mes WOD : une sortie longue ou dure la veille pèse sur les jambes, et une semaine déjà chargée en course appelle moins de course dans mes WOD. Ne me propose jamais d'activité au format JSON : seuls les WOD et les programmes s'ajoutent à l'application.
+
+Il peut aussi contenir `lifts` : mes repères de force, exercice par exercice. `one_rep_max_kg` est mon 1RM estimé (formule d'Epley), `best_set` la série qui le donne, `last` les séries de ma dernière séance. Sers-t'en pour prescrire les charges en kg : par exemple 70 à 80 % du 1RM estimé pour des séries de 5 à 8. Quand j'ai fait toutes les séries prévues, ou plus, monte la charge de 2,5 à 5 kg la fois suivante.
 
 Ce que j'attends selon ce qui accompagne l'historique :
 - Historique seul, sans autre texte : donne mon prochain WOD, un seul, en JSON.

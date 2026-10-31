@@ -1,7 +1,7 @@
-import { adjustmentText, clock, duration, load, quantity, scoreLine, teamLabel, typeLabel, wodSummary } from './format';
+import { adjustmentText, clock, duration, load, quantity, scoreLine, setsLine, teamLabel, typeLabel, wodSummary } from './format';
 import { isRest } from './movements';
-import { isOverCap, scoreDelta } from './records';
-import type { Movement, Result, Wod, WodType } from './types';
+import { beyondPrescribed, isOverCap, scoreDelta } from './records';
+import type { Movement, Result, Score, Wod, WodType } from './types';
 
 /** Couleur d'une étiquette : celle du type de WOD, ou un sens (record, Rx, hors cap…). */
 export type Tone = WodType | 'accent' | 'good' | 'warn' | 'muted';
@@ -42,8 +42,16 @@ function movementRow(movement: Movement, scheme?: string): string {
   return [amount, movement.name].filter(Boolean).join(' ') + (weight ? ` · ${weight}` : '');
 }
 
-function movementSection(wod: Wod, splits: number[]): Section {
+function movementSection(wod: Wod, score: Score, splits: number[]): Section {
   switch (wod.type) {
+    case 'strength': {
+      // Les séries réellement faites, exercice par exercice.
+      const done = 'exercises' in score ? score.exercises : [];
+      return {
+        title: 'Séries',
+        rows: wod.exercises.map((exercise, i) => ({ text: `${exercise.name} : ${setsLine(done[i] ?? [], exercise.load_count)}` })),
+      };
+    }
     case 'amrap':
       return { title: 'Mouvements', rows: wod.movements.map((movement) => ({ text: movementRow(movement) })) };
     case 'for_time':
@@ -82,7 +90,7 @@ export function sessionCard(result: Result, previous?: Result, record = false): 
 
   const tags: SessionCard['tags'] = [{ text: typeLabel(wod.type), tone: wod.type }];
   if (wod.team_size) tags.push({ text: teamLabel(wod.team_size), tone: 'good' });
-  tags.push(score.rx ? { text: 'Rx', tone: 'good' } : { text: 'Scaled', tone: 'muted' });
+  tags.push(score.rx ? { text: beyondPrescribed(wod, score) ? 'Rx+' : 'Rx', tone: 'good' } : { text: 'Scaled', tone: 'muted' });
   if (record) tags.push({ text: 'Record', tone: 'accent' });
   if (isOverCap(wod, score)) tags.push({ text: 'Hors cap', tone: 'warn' });
 
@@ -107,7 +115,7 @@ export function sessionCard(result: Result, previous?: Result, record = false): 
       }),
     });
   }
-  sections.push(movementSection(wod, splits));
+  sections.push(movementSection(wod, score, splits));
   if (score.adjustments && score.adjustments.length > 0) {
     sections.push({ title: 'Adapté', rows: score.adjustments.map((adjustment) => ({ text: adjustmentText(wod, adjustment) })) });
   }

@@ -7,6 +7,7 @@ import type {
   AppData,
   EmomScore,
   EmomWod,
+  Exercise,
   ForTimeCapped,
   ForTimeFinished,
   ForTimeWod,
@@ -20,6 +21,9 @@ import type {
   SavedWod,
   Score,
   Sport,
+  StrengthScore,
+  StrengthSet,
+  StrengthWod,
   Wod,
 } from './types';
 
@@ -34,6 +38,11 @@ const ADJUSTMENT_KEYS = ['index', 'name', 'replaced_by', ...QUANTITIES, 'load_kg
 const TEAM_MAX = 4;
 const WOD_KEYS = ['schema_version', 'type', 'title', 'description', 'warmup', 'equipment', 'team_size'];
 const SCORE_KEYS = ['rx', 'rpe', 'notes', 'adjustments'];
+const EXERCISE_KEYS = ['name', 'sets', 'reps', 'duration_sec', 'load_kg', 'load_count', 'rest_sec', 'notes'];
+const SET_KEYS = ['reps', 'duration_sec', 'load_kg'];
+/** Séries au plus par exercice, et exercices au plus par séance. */
+const MAX_SETS = 30;
+const MAX_EXERCISES = 30;
 const TITLE_MAX = 60;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^[\w-]{1,64}$/;
@@ -143,6 +152,82 @@ function checkMovement(raw: unknown, path: string, errors: string[], rule: Quant
   if (notes !== undefined) movement.notes = notes;
 
   return errors.length === before ? movement : undefined;
+}
+
+/**
+ * Une série de force : des répétitions ou une durée (exactement l'un des deux), et une charge
+ * facultative. Avec `done`, c'est une série faite : 0 répétition (série ratée) est accepté.
+ */
+function checkSet(raw: unknown, path: string, errors: string[], done = false): StrengthSet | undefined {
+  if (!isObj(raw)) return fail(errors, path, 'doit être un objet { "reps": …, "load_kg": … }');
+  const before = errors.length;
+  unknownKeys(raw, SET_KEYS, path, errors);
+  const set: StrengthSet = {};
+  const present = (['reps', 'duration_sec'] as const).filter((key) => raw[key] !== undefined);
+  if (present.length !== 1) fail(errors, path, 'il faut exactement un champ parmi reps, duration_sec');
+  for (const key of present) {
+    const value = checkNumber(raw[key], join(path, key), errors, done ? 'count' : 'integer');
+    if (value !== undefined) set[key] = value;
+  }
+  if (raw.load_kg !== undefined) {
+    // Une charge peut être décimale (62,5 kg), faite ou prévue.
+    const load = checkNumber(raw.load_kg, join(path, 'load_kg'), errors, 'positive');
+    if (load !== undefined) set.load_kg = load;
+  }
+  return errors.length === before ? set : undefined;
+}
+
+/** Un exercice de force, en séries identiques (`sets` = leur nombre) ou détaillées (`sets` = la liste). */
+function checkExercise(raw: unknown, path: string, errors: string[]): Exercise | undefined {
+  if (!isObj(raw)) return fail(errors, path, 'doit être un objet { "name": …, "sets": … }');
+  const before = errors.length;
+  const at = (key: string) => join(path, key);
+  unknownKeys(raw, EXERCISE_KEYS, path, errors);
+  const exercise: Exercise = { name: checkText(raw.name, at('name'), errors) ?? '', sets: 0 };
+  let hasLoad = false;
+  if (Array.isArray(raw.sets)) {
+    if (raw.sets.length === 0 || raw.sets.length > MAX_SETS) fail(errors, at('sets'), `doit contenir de 1 à ${MAX_SETS} séries`);
+    for (const key of ['reps', 'duration_sec', 'load_kg']) {
+      if (raw[key] !== undefined) fail(errors, at(key), 'à indiquer dans chaque série quand les séries sont détaillées');
+    }
+    const sets = raw.sets.map((set, i) => checkSet(set, `${at('sets')}[${i}]`, errors)).filter(isDefined);
+    exercise.sets = sets;
+    hasLoad = sets.some((set) => set.load_kg !== undefined);
+  } else if (raw.sets === undefined) {
+    fail(errors, at('sets'), 'champ manquant');
+  } else {
+    const count = checkNumber(raw.sets, at('sets'), errors, 'integer');
+    if (count !== undefined && count > MAX_SETS) fail(errors, at('sets'), `${MAX_SETS} séries au plus`);
+    const uniform = checkSet({ reps: raw.reps, duration_sec: raw.duration_sec, load_kg: raw.load_kg }, path, errors);
+    exercise.sets = count ?? 0;
+    if (uniform) Object.assign(exercise, uniform);
+    hasLoad = raw.load_kg !== undefined;
+  }
+  const count = checkLoadCount(raw.load_count, hasLoad, at('load_count'), errors);
+  if (count !== undefined) exercise.load_count = count;
+  if (raw.rest_sec !== undefined) {
+    const rest = checkNumber(raw.rest_sec, at('rest_sec'), errors, 'count');
+    if (rest !== undefined) exercise.rest_sec = rest;
+  }
+  const notes = optionalText(raw.notes, at('notes'), errors);
+  if (notes !== undefined) exercise.notes = notes;
+  return errors.length === before ? exercise : undefined;
+}
+
+/** Séries réellement faites, une liste par exercice du WOD, dans le même ordre. */
+function checkDoneSets(raw: unknown, wod: StrengthWod, path: string, errors: string[]): StrengthSet[][] | undefined {
+  if (!Array.isArray(raw)) return fail(errors, path, 'doit être une liste, une par exercice');
+  if (raw.length !== wod.exercises.length) {
+    return fail(errors, path, `contient ${raw.length} exercices pour ${wod.exercises.length} dans le WOD`);
+  }
+  const before = errors.length;
+  const lists = raw.map((sets, i) => {
+    const at = `${path}[${i}]`;
+    if (!Array.isArray(sets)) return fail(errors, at, 'doit être la liste des séries faites');
+    if (sets.length > MAX_SETS) return fail(errors, at, `${MAX_SETS} séries au plus`);
+    return sets.map((set, j) => checkSet(set, `${at}[${j}]`, errors, true)).filter(isDefined);
+  });
+  return errors.length === before ? lists.filter(isDefined) : undefined;
 }
 
 function checkMovements(
@@ -255,8 +340,18 @@ function checkWod(raw: unknown, path: string, errors: string[]): Wod | undefined
       if (errors.length > before || segments === undefined) return undefined;
       return compact<HyroxWod>({ schema_version: 1, type: 'hyrox', ...base, time_cap_sec, segments });
     }
+    case 'strength': {
+      unknownKeys(raw, [...WOD_KEYS, 'exercises'], path, errors);
+      let exercises: Exercise[] | undefined;
+      if (!Array.isArray(raw.exercises)) fail(errors, at('exercises'), 'doit être une liste d’exercices');
+      else if (raw.exercises.length === 0 || raw.exercises.length > MAX_EXERCISES) {
+        fail(errors, at('exercises'), `doit contenir de 1 à ${MAX_EXERCISES} exercices`);
+      } else exercises = raw.exercises.map((item, i) => checkExercise(item, `${at('exercises')}[${i}]`, errors)).filter(isDefined);
+      if (errors.length > before || exercises === undefined) return undefined;
+      return compact<StrengthWod>({ schema_version: 1, type: 'strength', ...base, exercises });
+    }
     default:
-      return fail(errors, at('type'), 'doit valoir "amrap", "emom", "for_time" ou "hyrox"');
+      return fail(errors, at('type'), 'doit valoir "amrap", "emom", "for_time", "hyrox" ou "strength"');
   }
 }
 
@@ -308,6 +403,13 @@ function checkScore(raw: unknown, wod: Wod, path: string, errors: string[]): Sco
         return compact<ForTimeCapped>({ finished: false, reps_completed, splits_sec, ...common });
       }
       return fail(errors, at('finished'), 'doit valoir true ou false');
+    }
+    case 'strength': {
+      unknownKeys(raw, [...SCORE_KEYS, 'exercises', 'duration_sec'], path, errors);
+      const exercises = checkDoneSets(raw.exercises, wod, at('exercises'), errors);
+      const duration_sec = raw.duration_sec === undefined ? undefined : checkNumber(raw.duration_sec, at('duration_sec'), errors, 'integer');
+      if (errors.length > before || exercises === undefined) return undefined;
+      return compact<StrengthScore>({ exercises, duration_sec, ...common });
     }
     case 'hyrox': {
       const total = wod.segments.length;

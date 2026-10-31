@@ -2,6 +2,7 @@ import { addDays, mondayOf, typeLabel } from './format';
 import { allMovements, canonicalName, isRest } from './movements';
 import { compareScores, repsPerRound, workKey } from './records';
 import { activityName } from './sports';
+import { plannedSets, restOf, volume } from './strength';
 import type { Activity, Movement, PlanEntry, Result, Score, Sport, Wod } from './types';
 
 /** RPE retenu pour la charge d'une séance qui n'en a pas. */
@@ -33,6 +34,11 @@ export function resultDuration({ wod, score }: Result): number | undefined {
       if ('time_sec' in score) return score.time_sec;
       const splits = 'splits_sec' in score ? score.splits_sec : undefined;
       return splits && splits.length > 0 ? splits.reduce((sum, sec) => sum + sec, 0) : wod.time_cap_sec;
+    }
+    case 'strength': {
+      if ('duration_sec' in score && score.duration_sec !== undefined) return score.duration_sec;
+      // Saisi sans chrono : environ 40 s par série, plus le repos prévu.
+      return wod.exercises.reduce((sum, exercise) => sum + plannedSets(exercise).length * (40 + restOf(exercise)), 0);
     }
   }
 }
@@ -82,6 +88,7 @@ export function familyOf(movement: Movement): Exclude<Family, 'autre'> {
 
 /** Valeur d'un score pour la mini-courbe : plus grand = meilleur. */
 export function performance(wod: Wod, score: Score): number {
+  if ('exercises' in score) return wod.type === 'strength' ? volume(wod, score) : 0;
   if ('rounds' in score) {
     const perRound = wod.type === 'amrap' ? repsPerRound(wod.movements) : undefined;
     return score.rounds * (perRound ?? 1000) + score.extra_reps;

@@ -45,6 +45,9 @@ export function totalMs(wod: Wod): number {
     case 'hyrox':
       // Sans time cap, le chrono tourne jusqu'au dernier segment.
       return wod.time_cap_sec === undefined ? Infinity : wod.time_cap_sec * 1000;
+    case 'strength':
+      // Une séance de force dure le temps de ses séries : le chrono ne fait que compter.
+      return Infinity;
   }
 }
 
@@ -55,7 +58,7 @@ export function totalMs(wod: Wod): number {
 export function frame(wod: Wod, ms: number): Frame {
   const total = totalMs(wod);
   if (ms < 0) return { phase: 'countdown', seconds: Math.ceil(-ms / 1000), interval: 0, overtime: false };
-  if (wod.type === 'for_time' || wod.type === 'hyrox') {
+  if (wod.type === 'for_time' || wod.type === 'hyrox' || wod.type === 'strength') {
     return { phase: 'running', seconds: Math.floor(ms / 1000), interval: 0, overtime: ms >= total };
   }
   if (ms >= total) {

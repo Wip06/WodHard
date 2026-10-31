@@ -9,6 +9,7 @@ import { coachView } from './views/coach';
 import { dataView } from './views/data';
 import { editorView } from './views/editor';
 import { historyView, recapView, resultView } from './views/history';
+import { liftsView, liftView } from './views/lifts';
 import { progressView } from './views/progress';
 import { scoreView } from './views/score';
 import { timerView } from './views/timer';
@@ -32,6 +33,8 @@ const routes: [RegExp, (...params: string[]) => View | null][] = [
   [/^\/history\/([\w-]+)\/recap$/, recapView],
   [/^\/data$/, dataView],
   [/^\/progress$/, progressView],
+  [/^\/lifts$/, liftsView],
+  [/^\/lift\/([^/]+)$/, liftView],
   [/^\/activity\/new$/, () => activityFormView()],
   [/^\/activity\/([\w-]+)\/edit$/, (id) => activityFormView(id)],
   [/^\/activity\/([\w-]+)$/, activityView],

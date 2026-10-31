@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allMovements, canonicalEquipment, canonicalName, isRest, knownNames, normalizeWod } from './movements';
+import { aliasConflicts, allMovements, canonicalEquipment, canonicalName, isRest, knownNames, normalizeWod } from './movements';
 import type { EmomWod, HyroxWod } from './types';
 
 const hyrox: HyroxWod = {
@@ -55,5 +55,19 @@ describe('isRest', () => {
     expect(isRest({ name: 'Repos', duration_sec: 60 })).toBe(true);
     expect(isRest({ name: 'rest', duration_sec: 90 })).toBe(true);
     expect(isRest({ name: 'Plank', duration_sec: 60 })).toBe(false);
+  });
+});
+
+describe('noms retenus', () => {
+  it('aucune variante ne désigne deux mouvements ou deux matériels différents', () => {
+    expect(aliasConflicts()).toEqual([]);
+  });
+
+  it('reconnaît les exercices de musculation en français', () => {
+    expect(canonicalName('développé incliné')).toBe('Incline bench press');
+    expect(canonicalName('Tirage vertical')).toBe('Lat pulldown');
+    expect(canonicalName('fentes bulgares')).toBe('Bulgarian split squat');
+    expect(canonicalName('Rowing barre')).toBe('Barbell row');
+    expect(canonicalName('rameur')).toBe('Rowing');
   });
 });
