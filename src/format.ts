@@ -1,4 +1,5 @@
-import type { Movement, Score, Wod, WodType } from './types';
+import { allMovements } from './movements';
+import type { Adjustment, Movement, Score, Wod, WodType } from './types';
 
 const TYPE_LABELS: Record<WodType, string> = { amrap: 'AMRAP', emom: 'EMOM', for_time: 'For Time', hyrox: 'Hyrox' };
 
@@ -132,4 +133,27 @@ export function dayLabel(isoDate: string): string {
   if (isoDate === addDays(now, 1)) return 'Demain';
   if (isoDate === addDays(now, -1)) return 'Hier';
   return dateLabel(isoDate);
+}
+
+/** Quantité avec son unité : « 5 reps », « 400 m ». */
+function amount(movement: Movement): string | null {
+  return movement.reps === undefined ? quantity(movement) : plural(movement.reps, 'rep');
+}
+
+/** « Ring row au lieu de Pull-up : 8 reps au lieu de 5 reps », « Thruster : 30 kg au lieu de 43 kg ». */
+export function adjustmentText(wod: Wod, adjustment: Adjustment): string {
+  const target = allMovements(wod)[adjustment.index];
+  const what = adjustment.replaced_by ? `${adjustment.replaced_by} au lieu de ${adjustment.name}` : adjustment.name;
+  const changes: string[] = [];
+  const done = amount(adjustment);
+  if (done !== null) {
+    const planned = target && amount(target);
+    changes.push(planned && planned !== done ? `${done} au lieu de ${planned}` : done);
+  }
+  if (adjustment.load_kg !== undefined || adjustment.load_count !== undefined) {
+    const doneLoad = load({ load_kg: adjustment.load_kg ?? target?.load_kg, load_count: adjustment.load_count ?? target?.load_count });
+    const plannedLoad = target ? load(target) : null;
+    if (doneLoad !== null) changes.push(plannedLoad && plannedLoad !== doneLoad ? `${doneLoad} au lieu de ${plannedLoad}` : doneLoad);
+  }
+  return changes.length > 0 ? `${what} : ${changes.join(', ')}` : what;
 }

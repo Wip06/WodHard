@@ -1,10 +1,12 @@
-import { choose, h, toast } from '../dom';
-import { dateLabel, scoreLine } from '../format';
+import { choose, h, offerFile, toast } from '../dom';
+import { adjustmentText, dateLabel, scoreLine } from '../format';
 import { coachReady, loadCoach } from '../claude';
 import { navigate, type View } from '../router';
 import { isOverCap, lastSplits, scoreDelta } from '../records';
+import { sessionCard, sessionFileName } from '../sessionCard';
+import { sessionImageFile } from '../sessionImage';
 import { currentRecords, deleteResult, findResult, findWod, sameWorkout, sortedActivities, sortedResults } from '../store';
-import { activityRow, adjustmentText, askAdvice, deltaChip, pageHead, resultRow, splitsList, wodSheet } from './parts';
+import { activityRow, askAdvice, deltaChip, pageHead, resultRow, splitsList, wodSheet } from './parts';
 
 /**
  * Toutes les séances, WOD et autres sports, de la plus récente à la plus ancienne. On y retrouve
@@ -104,10 +106,62 @@ export function resultView(id: string): View | null {
       'div',
       { class: 'stack' },
       coachReady(loadCoach()) && h('button', { class: 'btn primary block', onclick: () => askAdvice(result) }, 'Avis du coach'),
+      h('a', { class: 'btn block', href: `#/history/${id}/strava` }, 'Image pour Strava'),
       h('a', { class: 'btn block', href: `#/score/${id}` }, 'Modifier le score'),
       inLibrary && h('a', { class: 'btn block', href: `#/wod/${result.wod_id}` }, 'Refaire ce WOD'),
       h('button', { class: 'btn ghost danger block', onclick: () => void remove() }, 'Supprimer cette séance'),
     ),
   );
   return { el, tab: 'wods' };
+}
+
+/** Séance précédente du même WOD, pour la comparaison. */
+function previousOf(id: string) {
+  const result = findResult(id);
+  if (!result) return undefined;
+  const workout = sameWorkout(result.wod);
+  return workout.slice(0, Math.max(workout.findIndex((other) => other.id === id), 0)).at(-1);
+}
+
+/**
+ * Image de la séance pour Strava : à enregistrer dans ses photos, puis à ajouter à l'activité que
+ * la montre a créée, pour que Strava en reprenne le contenu.
+ */
+export function stravaImageView(id: string): View | null {
+  const result = findResult(id);
+  if (!result) return null;
+  const card = sessionCard(result, previousOf(id), currentRecords().has(id));
+  const image = h('img', { class: 'session-image', alt: `Image de la séance « ${result.wod.title} »` });
+  const save = h('button', { class: 'btn primary big block', disabled: true }, 'Enregistrer l’image');
+  let file: File | null = null;
+  let url = '';
+  sessionImageFile(card, sessionFileName(result))
+    .then((made) => {
+      file = made;
+      url = URL.createObjectURL(made);
+      image.src = url;
+      save.disabled = false;
+    })
+    .catch(() => toast('Image impossible à créer'));
+  // Le partage doit partir directement du toucher : l'image est donc prête avant.
+  save.addEventListener('click', () => {
+    if (file) void offerFile(file);
+  });
+
+  const el = h(
+    'section',
+    { class: 'page' },
+    pageHead('Image pour Strava', { href: `#/history/${id}`, label: 'Séance' }),
+    h('p', { class: 'lead' }, 'Enregistre-la dans tes photos, puis ajoute-la à ton activité Strava : Strava en reprend le contenu.'),
+    image,
+    save,
+    h('p', { class: 'hint' }, 'Sur iPhone, tu peux aussi appuyer longuement sur l’image, puis choisir « Enregistrer dans Photos ».'),
+  );
+  return {
+    el,
+    tab: 'wods',
+    destroy: () => {
+      if (url) URL.revokeObjectURL(url);
+    },
+  };
 }

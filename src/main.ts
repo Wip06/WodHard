@@ -8,7 +8,7 @@ import { chatView, proposalView } from './views/chat';
 import { coachView } from './views/coach';
 import { dataView } from './views/data';
 import { editorView } from './views/editor';
-import { historyView, resultView } from './views/history';
+import { historyView, resultView, stravaImageView } from './views/history';
 import { progressView } from './views/progress';
 import { scoreView } from './views/score';
 import { timerView } from './views/timer';
@@ -29,6 +29,7 @@ const routes: [RegExp, (...params: string[]) => View | null][] = [
   [/^\/score(?:\/([\w-]+))?$/, scoreView],
   [/^\/history$/, historyView],
   [/^\/history\/([\w-]+)$/, resultView],
+  [/^\/history\/([\w-]+)\/strava$/, stravaImageView],
   [/^\/data$/, dataView],
   [/^\/progress$/, progressView],
   [/^\/activity\/new$/, () => activityFormView()],

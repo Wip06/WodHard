@@ -1,4 +1,4 @@
-import { choose, copyText, h, toast } from '../dom';
+import { choose, copyText, h, offerFile, toast } from '../dom';
 import { plural, today } from '../format';
 import { render, type View } from '../router';
 import {
@@ -24,32 +24,11 @@ const LIMITS = [
 ];
 const DEFAULT_LIMIT = '30';
 
-function download(file: File): void {
-  const url = URL.createObjectURL(file);
-  const link = h('a', { href: url, download: file.name, class: 'offscreen' });
-  document.body.append(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 export async function exportData(): Promise<void> {
   const file = new File([JSON.stringify(buildBackup(), null, 2)], `wodhard-${today()}.json`, {
     type: 'application/json',
   });
-  // Sur téléphone, la feuille de partage (« Enregistrer dans Fichiers ») est plus fiable
-  // qu'un téléchargement, surtout pour une PWA installée sur iOS.
-  const touch = window.matchMedia('(pointer: coarse)').matches;
-  if (touch && navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: file.name });
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
-      download(file);
-    }
-  } else {
-    download(file);
-  }
+  if (!(await offerFile(file))) return;
   markExported();
   render();
 }

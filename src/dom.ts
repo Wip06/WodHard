@@ -114,3 +114,31 @@ export async function copyText(text: string): Promise<boolean> {
     return copied;
   }
 }
+
+function download(file: File): void {
+  const url = URL.createObjectURL(file);
+  const link = h('a', { href: url, download: file.name, class: 'offscreen' });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Propose un fichier à l'utilisateur. Sur téléphone, la feuille de partage (« Enregistrer l'image »,
+ * « Enregistrer dans Fichiers ») est plus fiable qu'un téléchargement, surtout pour une PWA installée
+ * sur iOS ; ailleurs, le fichier est téléchargé. Renvoie false si l'utilisateur a annulé.
+ */
+export async function offerFile(file: File): Promise<boolean> {
+  const touch = window.matchMedia('(pointer: coarse)').matches;
+  if (touch && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: file.name });
+      return true;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return false;
+    }
+  }
+  download(file);
+  return true;
+}

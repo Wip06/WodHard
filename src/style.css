@@ -1905,3 +1905,13 @@ textarea {
   padding-inline: 6px;
   font-size: 0.9rem;
 }
+
+/* Image d'une séance pour Strava : affichée en entier, avant d'être enregistrée. */
+.session-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: auto 4 / 5;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}

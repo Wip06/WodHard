@@ -2,12 +2,12 @@ import { h } from '../dom';
 import { CHAT_DRAFT_KEY, coachReady, loadCoach } from '../claude';
 import { navigate } from '../router';
 import {
+  adjustmentText,
   clock,
   dateLabel,
   duration,
   load,
   movementText,
-  plural,
   quantity,
   scoreLine,
   teamLabel,
@@ -15,10 +15,10 @@ import {
   wodHeadline,
   wodSummary,
 } from '../format';
-import { allMovements, isRest } from '../movements';
+import { isRest } from '../movements';
 import { isOverCap, splitDeltas, type Delta } from '../records';
 import { activityLine, activityName } from '../sports';
-import type { Activity, Adjustment, Movement, Result, Wod } from '../types';
+import type { Activity, Movement, Result, Wod } from '../types';
 
 export function pageHead(title: string, back?: { href: string; label: string }): HTMLElement {
   return h(
@@ -242,29 +242,6 @@ export function wodSheet(wod: Wod): HTMLElement {
     wod.warmup && h('div', { class: 'warmup' }, h('h3', null, 'Échauffement'), h('p', null, wod.warmup)),
     wodPlan(wod, askable),
   );
-}
-
-/** Quantité avec son unité : « 5 reps », « 400 m ». */
-function amount(movement: Movement): string | null {
-  return movement.reps === undefined ? quantity(movement) : plural(movement.reps, 'rep');
-}
-
-/** « Ring row au lieu de Pull-up : 8 reps au lieu de 5 reps », « Thruster : 30 kg au lieu de 43 kg ». */
-export function adjustmentText(wod: Wod, adjustment: Adjustment): string {
-  const target = allMovements(wod)[adjustment.index];
-  const what = adjustment.replaced_by ? `${adjustment.replaced_by} au lieu de ${adjustment.name}` : adjustment.name;
-  const changes: string[] = [];
-  const done = amount(adjustment);
-  if (done !== null) {
-    const planned = target && amount(target);
-    changes.push(planned && planned !== done ? `${done} au lieu de ${planned}` : done);
-  }
-  if (adjustment.load_kg !== undefined || adjustment.load_count !== undefined) {
-    const doneLoad = load({ load_kg: adjustment.load_kg ?? target?.load_kg, load_count: adjustment.load_count ?? target?.load_count });
-    const plannedLoad = target ? load(target) : null;
-    if (doneLoad !== null) changes.push(plannedLoad && plannedLoad !== doneLoad ? `${doneLoad} au lieu de ${plannedLoad}` : doneLoad);
-  }
-  return changes.length > 0 ? `${what} : ${changes.join(', ')}` : what;
 }
 
 /** Message qui demande au coach son avis sur une séance, avec tout ce qui a été noté. */
