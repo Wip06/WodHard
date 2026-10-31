@@ -242,6 +242,8 @@ Il peut aussi contenir `lifts` : mes repères de force, exercice par exercice. `
 
 Il peut aussi contenir `references` : mes WOD de référence (Fran, Cindy, un test maison…), à refaire régulièrement pour mesurer ma progression. Chacun a son `wod`, `retest_weeks` (le délai entre deux tests, en semaines), et selon les cas `last` et `best` (date et score de la dernière fois et du record) et `due_on` (date à partir de laquelle le refaire). Quand une référence arrive à `due_on`, place-la dans mon programme un jour où je serai frais (pas le lendemain d'une grosse séance), en recopiant son `wod` à l'identique : modifié, il ne se comparerait plus aux fois précédentes.
 
+Il peut aussi contenir `goals` : mes objectifs, écrits en clair dans `goal`, avec selon les cas `deadline` (échéance), `current` (où j'en suis), `remaining` (ce qu'il me reste) et `achieved_on` (le jour où je l'ai atteint), et mes `notes`. Construis mes séances pour m'en rapprocher, en priorité ceux dont l'échéance approche, sans sacrifier l'équilibre de la semaine. Dis-moi franchement si une échéance te paraît irréaliste. Quand un objectif est atteint, félicite-moi et propose le suivant, en texte : je les ajoute moi-même dans l'application.
+
 Ce que j'attends selon ce qui accompagne l'historique :
 - Historique seul, sans autre texte : donne mon prochain WOD, un seul, en JSON.
 - Historique avec une demande de WOD ou de programme : réponds à cette demande, dans le format JSON correspondant.

@@ -4,8 +4,9 @@ import { liftsOf } from './lifts';
 import { knownNames, normalizeWod } from './movements';
 import { recordIds, workKey } from './records';
 import { referenceOf, type Reference } from './references';
+import { goalStatus, goalSummary, sortGoals, type GoalStatus } from './goals';
 import type { Clock } from './timer';
-import type { Activity, AppData, Backup, HistoryExport, PlanEntry, ProgramItem, Result, SavedWod, SessionWod, SingleWod, StrengthSet, Wod } from './types';
+import type { Activity, AppData, Backup, Goal, HistoryExport, PlanEntry, ProgramItem, Result, SavedWod, SessionWod, SingleWod, StrengthSet, Wod } from './types';
 import { isDate, isObj, validateBackup, validateWod } from './validate';
 
 export const DATA_KEY = 'wodhard:data';
@@ -20,6 +21,8 @@ const BACKUP_MAX_DAYS = 14;
 const BACKUP_SNOOZE_DAYS = 3;
 /** Exercices de force dont les repères partent au coach. */
 const LIFTS_SENT = 20;
+/** Objectifs atteints depuis moins de tant de jours, encore envoyés au coach. */
+const GOALS_ACHIEVED_DAYS = 90;
 
 /** Séance de force en cours : séries faites, exercice en cours, repos en cours. */
 export interface StrengthProgress {
@@ -82,7 +85,7 @@ export interface PlannedWod {
   done?: Result;
 }
 
-const emptyData = (): AppData => ({ wods: [], results: [], plan: [], activities: [] });
+const emptyData = (): AppData => ({ wods: [], results: [], plan: [], activities: [], goals: [] });
 
 let data: AppData = emptyData();
 let session: Session | null = null;
@@ -406,6 +409,25 @@ export function saveActivity(activity: Activity): void {
   saveData();
 }
 
+export const getGoals = (): readonly Goal[] => data.goals;
+export const findGoal = (id: string) => data.goals.find((goal) => goal.id === id);
+
+/** Ajoute l'objectif, ou le remplace si son identifiant existe déjà. */
+export function saveGoal(goal: Goal): void {
+  const index = data.goals.findIndex((existing) => existing.id === goal.id);
+  if (index !== -1) data.goals[index] = goal;
+  else data.goals.push(goal);
+  saveData();
+}
+
+/** Avancement de chaque objectif : en cours d'abord, puis atteints. */
+export const goalStatuses = (): GoalStatus[] => sortGoals(data.goals.map((goal) => goalStatus(goal, sortedResults())));
+
+export function deleteGoal(id: string): void {
+  data.goals = data.goals.filter((goal) => goal.id !== id);
+  saveData();
+}
+
 export function deleteActivity(id: string): void {
   data.activities = data.activities.filter((activity) => activity.id !== id);
   saveData();
@@ -441,6 +463,10 @@ export function buildHistory(limit?: number): HistoryExport {
       };
     });
   }
+  // Objectifs en cours, et ceux atteints depuis peu : le coach peut en fixer de nouveaux.
+  const since = addDays(today(), -GOALS_ACHIEVED_DAYS);
+  const goals = goalStatuses().filter((status) => !status.achievedOn || status.achievedOn >= since);
+  if (goals.length > 0) history.goals = goals.map(goalSummary);
   const refs = references();
   if (refs.length > 0) {
     history.references = refs.map(({ saved, weeks, last, best, dueOn }) => ({
@@ -475,6 +501,7 @@ export function applyBackup(incoming: AppData, mode: 'merge' | 'replace'): void 
           results: mergeById(data.results, incoming.results),
           plan: mergeById(data.plan, incoming.plan),
           activities: mergeById(data.activities, incoming.activities),
+          goals: mergeById(data.goals, incoming.goals),
         };
   saveData();
 }

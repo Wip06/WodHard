@@ -40,7 +40,7 @@ const entryOf = (title: string) => visiblePlan().find((row) => row.saved.wod.tit
 
 beforeEach(() => {
   memory.clear();
-  applyBackup({ wods: [], results: [], plan: [], activities: [] }, 'replace');
+  applyBackup({ wods: [], results: [], plan: [], activities: [], goals: [] }, 'replace');
   // Dates loin dans le futur : tout reste visible dans le programme.
   addProgram([
     { date: '2099-01-05', wod: wod('A') },
@@ -115,6 +115,7 @@ describe('noms des mouvements', () => {
         results: [],
         plan: [],
         activities: [],
+        goals: [],
       },
       'replace',
     );
@@ -124,7 +125,7 @@ describe('noms des mouvements', () => {
   });
 
   it('reconnaît comme doublon un WOD enregistré avec d’anciens noms', () => {
-    applyBackup({ wods: [{ id: 'old', added_at: '2026-10-01T10:00:00.000Z', wod: { ...wod('X'), movements: [{ name: 'burpees', reps: 10 }] } }], results: [], plan: [], activities: [] }, 'replace');
+    applyBackup({ wods: [{ id: 'old', added_at: '2026-10-01T10:00:00.000Z', wod: { ...wod('X'), movements: [{ name: 'burpees', reps: 10 }] } }], results: [], plan: [], activities: [], goals: [] }, 'replace');
     expect(addWod({ ...wod('X'), movements: [{ name: 'Burpee', reps: 10 }] })).toMatchObject({ duplicate: true, saved: { id: 'old' } });
   });
 });

@@ -36,6 +36,7 @@ import { isDate, parseImport, type Import } from '../validate';
 import { exportData } from './data';
 import { startBlock } from './blocks';
 import { badges, field, pageHead, resultRow, typeBadge, wodSheet } from './parts';
+import { goalLinks, sameWorkGoal } from './goals';
 import { progressionChart, referenceChip, referenceSection } from './references';
 
 const MAX_ERRORS = 12;
@@ -67,6 +68,20 @@ function wodCardContent(saved: SavedWod): Content {
         `Fait ${done.length}× · dernier : ${scoreLine(last.wod, last.score)}, ${dateLabel(last.date)}`,
       ),
   ];
+}
+
+/** Objectifs en cours sur ce WOD, et de quoi en fixer un (sur un AMRAP, un For Time ou un Hyrox). */
+function goalSection(saved: SavedWod): HTMLElement | false {
+  const { wod } = saved;
+  if (wod.type !== 'amrap' && wod.type !== 'for_time' && wod.type !== 'hyrox') return false;
+  const goals = goalLinks(sameWorkGoal(wod));
+  return h(
+    'section',
+    { class: 'stack' },
+    h('h2', { class: 'section-title' }, 'Objectif'),
+    goals,
+    h('a', { class: `btn block ${goals ? 'ghost' : ''}`, href: `#/goal/new/wod:${saved.id}` }, goals ? 'Fixer un autre objectif' : 'Fixer un objectif sur ce WOD'),
+  );
 }
 
 /** WOD de référence dont le délai est écoulé : quand il a été fait, et son record. */
@@ -771,6 +786,7 @@ export function wodDetailView(id: string): View | null {
       h('div', { class: 'row' }, planDate, h('button', { class: 'btn', onclick: plan }, 'Planifier')),
     ),
     referenceSection(saved, render),
+    goalSection(saved),
     past.length > 0 &&
       h(
         'section',

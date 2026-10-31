@@ -1,6 +1,7 @@
 import { choose, h, toast } from '../dom';
 import { celebrate } from '../fireworks';
 import { clock, exerciseSummary, movementText, setText, today, wodHeadline, wodSummary } from '../format';
+import { newlyAchieved } from '../goals';
 import { recordsBeaten } from '../lifts';
 import { coachReady, loadCoach } from '../claude';
 import { allMovements, isRest } from '../movements';
@@ -10,6 +11,7 @@ import { navigate, type View } from '../router';
 import {
   currentRecords,
   findResult,
+  getGoals,
   getSession,
   newId,
   sameWorkout,
@@ -648,12 +650,20 @@ export function scoreView(resultId?: string): View | null {
       const result: Result = { id, ...(wodId && { wod_id: wodId }), date: date.value, wod, score };
       saveResult(result);
       setSession(null);
-      // Record : sur le WOD (déjà fait), ou sur un exercice de force (charge, 1RM estimé, reps).
+      // Objectif atteint, record sur le WOD (déjà fait), ou sur un exercice de force (charge, 1RM estimé, reps).
+      const reached = newlyAchieved(getGoals(), before, sortedResults())[0];
       const lifted = recordsBeaten(before, result)[0];
-      const record = currentRecords().has(id) || lifted !== undefined;
+      const record = currentRecords().has(id) || lifted !== undefined || reached !== undefined;
       const saved = findResult(id);
       const advice = saved && coachReady(loadCoach()) ? { label: 'Avis du coach', run: () => askAdvice(saved) } : undefined;
-      toast(lifted ? `Nouveau record : ${lifted.name} ${setText(lifted.set)}` : record ? 'Nouveau record !' : 'Séance enregistrée', advice);
+      const message = reached
+        ? `Objectif atteint : ${reached.title} !`
+        : lifted
+          ? `Nouveau record : ${lifted.name} ${setText(lifted.set)}`
+          : record
+            ? 'Nouveau record !'
+            : 'Séance enregistrée';
+      toast(message, advice);
       // La séance s'ouvre : score, comparaison avec la dernière fois, avis du coach.
       navigate(`/history/${id}`, true);
       // Un record prolonge la fête sur la séance, jusqu'à ce que l'on en sorte.

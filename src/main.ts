@@ -9,6 +9,7 @@ import { chatView, proposalView } from './views/chat';
 import { coachView } from './views/coach';
 import { dataView } from './views/data';
 import { editorView, sessionEditorView } from './views/editor';
+import { goalFormView, goalView } from './views/goals';
 import { historyView, recapView, resultView } from './views/history';
 import { liftsView, liftView } from './views/lifts';
 import { progressView } from './views/progress';
@@ -39,6 +40,10 @@ const routes: [RegExp, (...params: string[]) => View | null][] = [
   [/^\/progress$/, progressView],
   [/^\/lifts$/, liftsView],
   [/^\/lift\/([^/]+)$/, liftView],
+  [/^\/goal\/new$/, () => goalFormView()],
+  [/^\/goal\/new\/((?:wod|lift):[^/]+)$/, (preset) => goalFormView(undefined, preset)],
+  [/^\/goal\/([\w-]+)\/edit$/, (id) => goalFormView(id)],
+  [/^\/goal\/([\w-]+)$/, goalView],
   [/^\/activity\/new$/, () => activityFormView()],
   [/^\/activity\/([\w-]+)\/edit$/, (id) => activityFormView(id)],
   [/^\/activity\/([\w-]+)$/, activityView],

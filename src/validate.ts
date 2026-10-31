@@ -9,6 +9,7 @@ import type {
   EmomWod,
   Exercise,
   ForTimeCapped,
+  Goal,
   ForTimeFinished,
   ForTimeWod,
   HyroxFinished,
@@ -625,6 +626,63 @@ function checkActivity(raw: unknown, path: string, errors: string[]): Activity |
 }
 
 /** Valide une activité saisie dans le formulaire. */
+const GOAL_KEYS: Record<Goal['kind'], string[]> = {
+  lift: ['exercise', 'load_kg', 'reps'],
+  wod: ['wod', 'wod_id', 'time_sec', 'rounds', 'extra_reps'],
+  free: ['title', 'done_on'],
+};
+
+function checkGoal(raw: unknown, path: string, errors: string[]): Goal | undefined {
+  if (!isObj(raw)) return fail(errors, path, 'doit être un objet');
+  const before = errors.length;
+  const at = (key: string) => join(path, key);
+  const id = checkId(raw.id, at('id'), errors);
+  const created = isDate(raw.created) ? raw.created : fail(errors, at('created'), 'date attendue au format AAAA-MM-JJ');
+  const date = raw.date === undefined ? undefined : isDate(raw.date) ? raw.date : fail(errors, at('date'), 'date attendue au format AAAA-MM-JJ');
+  const notes = optionalText(raw.notes, at('notes'), errors);
+  const kind = (['lift', 'wod', 'free'] as const).find((name) => name === raw.kind);
+  if (!kind) return fail(errors, at('kind'), 'doit valoir "lift", "wod" ou "free"');
+  unknownKeys(raw, ['id', 'kind', 'created', 'date', 'notes', ...GOAL_KEYS[kind]], path, errors);
+  const base = { id: id ?? '', created: created ?? '', date, notes };
+
+  switch (kind) {
+    case 'lift': {
+      const exercise = checkText(raw.exercise, at('exercise'), errors, TITLE_MAX);
+      const load_kg = checkNumber(raw.load_kg, at('load_kg'), errors, 'positive');
+      const reps = checkNumber(raw.reps, at('reps'), errors, 'integer');
+      if (errors.length > before || exercise === undefined || load_kg === undefined || reps === undefined) return undefined;
+      return compact<Goal>({ kind, ...base, exercise, load_kg, reps });
+    }
+    case 'wod': {
+      const wod = checkWod(raw.wod, at('wod'), errors);
+      if (wod && wod.type !== 'amrap' && wod.type !== 'for_time' && wod.type !== 'hyrox') {
+        return fail(errors, at('wod'), 'un objectif se fixe sur un AMRAP, un For Time ou un Hyrox');
+      }
+      const wod_id = raw.wod_id === undefined ? undefined : checkId(raw.wod_id, at('wod_id'), errors);
+      const timed = wod?.type !== 'amrap';
+      const time_sec = timed ? checkNumber(raw.time_sec, at('time_sec'), errors, 'integer') : undefined;
+      const rounds = timed ? undefined : checkNumber(raw.rounds, at('rounds'), errors, 'count');
+      const extra_reps = timed || raw.extra_reps === undefined ? undefined : checkNumber(raw.extra_reps, at('extra_reps'), errors, 'count');
+      if (timed && raw.rounds !== undefined) fail(errors, at('rounds'), 'seulement pour un AMRAP');
+      if (!timed && raw.time_sec !== undefined) fail(errors, at('time_sec'), 'pas pour un AMRAP : donne rounds');
+      if (!timed && rounds === 0 && !extra_reps) fail(errors, at('rounds'), 'objectif vide');
+      if (errors.length > before || !wod) return undefined;
+      return compact<Goal>({ kind, ...base, wod, wod_id, time_sec, rounds, extra_reps });
+    }
+    case 'free': {
+      const title = checkText(raw.title, at('title'), errors, TITLE_MAX);
+      const done_on = raw.done_on === undefined ? undefined : isDate(raw.done_on) ? raw.done_on : fail(errors, at('done_on'), 'date attendue au format AAAA-MM-JJ');
+      if (errors.length > before || title === undefined) return undefined;
+      return compact<Goal>({ kind, ...base, title, done_on });
+    }
+  }
+}
+
+export function validateGoal(raw: unknown): Validation<Goal> {
+  const errors: string[] = [];
+  return result(checkGoal(raw, '', errors), errors);
+}
+
 export function validateActivity(raw: unknown): Validation<Activity> {
   const errors: string[] = [];
   return result(checkActivity(raw, '', errors), errors);
@@ -713,10 +771,12 @@ export function validateBackup(raw: unknown): Validation<AppData> {
   // `plan` est absent des sauvegardes faites avant l'ajout du programme.
   const rawPlan = raw.plan ?? [];
   if (!Array.isArray(rawPlan)) fail(errors, 'plan', 'doit être une liste');
-  // `activities` est absent des sauvegardes faites avant l'ajout des autres sports.
+  // `activities` est absent des sauvegardes faites avant l'ajout des autres sports, `goals` avant les objectifs.
   const rawActivities = raw.activities ?? [];
   if (!Array.isArray(rawActivities)) fail(errors, 'activities', 'doit être une liste');
-  if (!Array.isArray(raw.wods) || !Array.isArray(raw.results) || !Array.isArray(rawPlan) || !Array.isArray(rawActivities)) {
+  const rawGoals = raw.goals ?? [];
+  if (!Array.isArray(rawGoals)) fail(errors, 'goals', 'doit être une liste');
+  if (!Array.isArray(raw.wods) || !Array.isArray(raw.results) || !Array.isArray(rawPlan) || !Array.isArray(rawActivities) || !Array.isArray(rawGoals)) {
     return { ok: false, errors };
   }
 
@@ -734,7 +794,8 @@ export function validateBackup(raw: unknown): Validation<AppData> {
       return entry;
     });
   const activities = rawActivities.map((item, i) => checkActivity(item, `activities[${i}]`, errors)).filter(isDefined);
-  return result({ wods, results, plan, activities }, errors);
+  const goals = rawGoals.map((item, i) => checkGoal(item, `goals[${i}]`, errors)).filter(isDefined);
+  return result({ wods, results, plan, activities, goals }, errors);
 }
 
 export function parseBackup(text: string): Validation<AppData> {

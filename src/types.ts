@@ -223,6 +223,45 @@ export interface Activity {
   notes?: string;
 }
 
+interface GoalBase {
+  id: string;
+  /** Jour où l'objectif a été fixé. */
+  created: string;
+  /** Échéance, facultative. */
+  date?: string;
+  notes?: string;
+}
+
+/** Soulever une charge : `reps` répétitions à `load_kg` (par main pour une paire) au moins. */
+export interface LiftGoal extends GoalBase {
+  kind: 'lift';
+  exercise: string;
+  load_kg: number;
+  reps: number;
+}
+
+/**
+ * Un score en Rx sur un WOD (copié, comme dans l'historique) : un temps à battre pour un For Time
+ * ou un Hyrox, un nombre de tours (et de reps) à atteindre pour un AMRAP.
+ */
+export interface WodGoal extends GoalBase {
+  kind: 'wod';
+  wod: AmrapWod | ForTimeWod | HyroxWod;
+  wod_id?: string;
+  time_sec?: number;
+  rounds?: number;
+  extra_reps?: number;
+}
+
+/** Objectif libre (« 10 strict pull-ups »), coché à la main. */
+export interface FreeGoal extends GoalBase {
+  kind: 'free';
+  title: string;
+  done_on?: string;
+}
+
+export type Goal = LiftGoal | WodGoal | FreeGoal;
+
 /** Un élément d'un programme collé : un WOD, éventuellement daté. */
 export interface ProgramItem {
   date?: string;
@@ -234,6 +273,7 @@ export interface AppData {
   results: Result[];
   plan: PlanEntry[];
   activities: Activity[];
+  goals: Goal[];
 }
 
 export interface Backup extends AppData {
@@ -253,6 +293,19 @@ export interface HistoryExport {
   lifts?: LiftSummary[];
   /** WOD de référence, à refaire régulièrement. */
   references?: ReferenceSummary[];
+  /** Objectifs en cours et atteints récemment. */
+  goals?: GoalSummary[];
+}
+
+/** Un objectif, envoyé au coach en clair. */
+export interface GoalSummary {
+  goal: string;
+  deadline?: string;
+  /** Où j'en suis (« 110 kg », « 5:18 »), et ce qu'il reste à faire. */
+  current?: string;
+  remaining?: string;
+  achieved_on?: string;
+  notes?: string;
 }
 
 /** Un WOD de référence, envoyé au coach : quand le refaire, et ce qu'il a donné. */

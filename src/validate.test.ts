@@ -319,7 +319,7 @@ describe('validateBackup', () => {
   it('relit une sauvegarde faite avant l’ajout du programme', () => {
     expect(validateBackup(backup)).toEqual({
       ok: true,
-      value: { wods: backup.wods, results: backup.results, plan: [], activities: [] },
+      value: { wods: backup.wods, results: backup.results, plan: [], activities: [], goals: [] },
     });
   });
 

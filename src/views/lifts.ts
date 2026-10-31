@@ -3,6 +3,7 @@ import { dateLabel, decimal, duration, kg, setsLine, setText } from '../format';
 import { liftsOf, type Lift, type LiftSession } from '../lifts';
 import type { View } from '../router';
 import { sortedResults } from '../store';
+import { goalLinks, sameLiftGoal } from './goals';
 import { pageHead } from './parts';
 
 /** Exercices montrés dans l'onglet Progrès ; les autres sont sur la page « Mes charges ». */
@@ -112,6 +113,7 @@ export function liftView(key: string): View | null {
       h('dt', null, 'Séances'),
       h('dd', null, lift.sessions.length),
     ),
+    goalLinks(sameLiftGoal(lift.key)) || h('a', { class: 'btn block', href: `#/goal/new/lift:${encodeURIComponent(lift.key)}` }, 'Fixer un objectif de charge'),
     lift.sessions.length > 1 &&
       h(
         'section',

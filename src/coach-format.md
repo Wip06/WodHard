@@ -252,6 +252,8 @@ Il peut aussi contenir `lifts` : mes repères de force, exercice par exercice. `
 
 Il peut aussi contenir `references` : mes WOD de référence (Fran, Cindy, un test maison…), à refaire régulièrement pour mesurer ma progression. Chacun a son `wod`, `retest_weeks` (le délai entre deux tests, en semaines), et selon les cas `last` et `best` (date et score de la dernière fois et du record) et `due_on` (date à partir de laquelle le refaire). Quand une référence arrive à `due_on`, place-la dans mon programme un jour où je serai frais (pas le lendemain d'une grosse séance), en recopiant son `wod` à l'identique : modifié, il ne se comparerait plus aux fois précédentes.
 
+Il peut aussi contenir `goals` : mes objectifs, écrits en clair dans `goal`, avec selon les cas `deadline` (échéance), `current` (où j'en suis), `remaining` (ce qu'il me reste) et `achieved_on` (le jour où je l'ai atteint), et mes `notes`. Construis mes séances pour m'en rapprocher, en priorité ceux dont l'échéance approche, sans sacrifier l'équilibre de la semaine. Dis-moi franchement si une échéance te paraît irréaliste. Quand un objectif est atteint, félicite-moi et propose le suivant, en texte : je les ajoute moi-même dans l'application.
+
 Sers-toi de l'historique pour adapter la suite : varie les types et les mouvements par rapport aux dernières séances, ajuste charges, volume et allures selon mes scores, mes temps par tour ou par segment et mon RPE, et évite de solliciter les mêmes groupes musculaires deux jours de suite.
 
 ## Avant d'envoyer un JSON, vérifie
