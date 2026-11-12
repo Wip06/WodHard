@@ -18,7 +18,7 @@ import { navigate, type View } from '../router';
 import { addProgram, addWod, buildHistory, findWod, newId } from '../store';
 import type { ProgramItem } from '../types';
 import { isObj, parseImport, type Import } from '../validate';
-import { badges, pageHead, wodSheet } from './parts';
+import { actionMenu, badges, pageHead, wodSheet } from './parts';
 
 const CHAT_KEY = 'wodhard:coach-chat';
 const HISTORY_LIMIT = 30;
@@ -575,8 +575,11 @@ export function chatView(): View {
       'header',
       { class: 'chat-head' },
       h('div', { class: 'chat-title' }, h('strong', null, 'Coach'), subtitle),
-      h('button', { class: 'icon-btn', 'aria-label': 'Nouvelle conversation', onclick: () => void reset() }, '✎'),
-      h('a', { class: 'icon-btn', href: '#/coach', 'aria-label': 'Réglages du coach' }, '⚙'),
+      // Les actions du coach, dans le même menu ⋯ que sur les autres pages.
+      actionMenu('Actions du coach', [
+        { label: 'Nouvelle conversation', run: () => void reset() },
+        { label: 'Réglages du coach', run: () => navigate('/coach') },
+      ]).el,
     ),
     thread,
     errorBox,
