@@ -21,10 +21,16 @@
   /* 48 px : la taille d'une barre d'onglets native, au-dessus des 44 px conseillés pour le toucher. */
   --tabs-height: 48px;
   /*
-   * Marge sous les onglets : celle de la barre d'accueil de l'iPhone, moins 20 px. Les libellés
-   * restent au-dessus du trait de la barre d'accueil, sans un grand vide en dessous.
+   * Écart sous la barre flottante : de quoi passer au-dessus du trait d'accueil de l'iPhone
+   * (sa marge moins 16 px), et 10 px au moins ailleurs.
    */
-  --tabs-inset: max(0px, calc(env(safe-area-inset-bottom) - 20px));
+  --tabs-inset: max(10px, calc(env(safe-area-inset-bottom) - 16px));
+  /* Place prise en bas par la barre : écart, barre et ses bords, puis 8 px avant ce qui s'y pose. */
+  --tabs-space: calc(var(--tabs-inset) + var(--tabs-height) + 10px);
+  /* Bulles : barre du bas, menus ☰ et ⋯, barre de sélection. */
+  --bubble-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+  --bubble-active: color-mix(in srgb, var(--accent) 16%, transparent);
+  --bubble-press: color-mix(in srgb, var(--text) 8%, transparent);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -98,7 +104,7 @@ a {
   flex-direction: column;
   gap: 18px;
   padding: calc(env(safe-area-inset-top) + 20px) var(--gutter)
-    calc(var(--tabs-inset) + var(--tabs-height) + 28px);
+    calc(var(--tabs-space) + 28px);
 }
 
 .page-head {
@@ -471,18 +477,23 @@ a {
   flex-direction: column;
   width: max-content;
   max-width: calc(100vw - 2 * var(--gutter));
+  gap: 2px;
   padding: 6px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--bubble-shadow);
+  transform-origin: top right;
+  animation: bubble-down 0.16s ease-out;
 }
 
+/* Menu ⋯ : des bulles comme celles du menu ☰. */
 .menu-list button {
   min-height: 46px;
   padding: 10px 14px;
   border: 0;
-  border-radius: calc(var(--radius) - 6px);
+  border-radius: 18px;
   background: none;
   color: var(--text);
   font: inherit;
@@ -493,7 +504,7 @@ a {
 
 .menu-list button:hover:not(:disabled),
 .menu-list button:focus-visible {
-  background: var(--surface);
+  background: var(--bubble-press);
 }
 
 .menu-list button.danger {
@@ -529,28 +540,32 @@ a {
 }
 
 .page.selecting {
-  padding-bottom: calc(var(--tabs-inset) + var(--tabs-height) + 150px);
+  padding-bottom: calc(var(--tabs-space) + 150px);
 }
 
 /* La barre de sélection ouverte, les notifications passent au-dessus. */
 body:has(.select-bar:not([hidden])) .toast {
-  bottom: calc(var(--tabs-inset) + var(--tabs-height) + 130px);
+  bottom: calc(var(--tabs-space) + 130px);
 }
 
+/* Barre de sélection : une bulle posée sur la barre du bas, comme les menus. */
 .select-bar {
   position: fixed;
-  right: 0;
-  bottom: calc(var(--tabs-inset) + var(--tabs-height));
-  left: 0;
+  right: 12px;
+  bottom: var(--tabs-space);
+  left: 12px;
   z-index: 11;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: 560px;
+  max-width: 536px;
   margin: 0 auto;
-  padding: 10px var(--gutter);
-  border-top: 1px solid var(--line);
-  background: var(--surface);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--bubble-shadow);
 }
 
 .select-head {
@@ -1325,7 +1340,7 @@ textarea {
 /* Onglet Coach : la saisie se pose sur la barre du bas. */
 .composer {
   position: sticky;
-  bottom: calc(var(--tabs-inset) + var(--tabs-height));
+  bottom: calc(var(--tabs-space));
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -1362,7 +1377,7 @@ textarea {
 }
 
 .chat-privacy {
-  padding: 0 var(--gutter) calc(var(--tabs-inset) + var(--tabs-height) + 10px);
+  padding: 0 var(--gutter) calc(var(--tabs-space) + 10px);
   background: var(--bg);
   color: var(--muted);
   font-size: 0.75rem;
@@ -1371,7 +1386,7 @@ textarea {
 
 /* Les notifications passent au-dessus de la saisie. */
 body:has(.composer) .toast {
-  bottom: calc(var(--tabs-inset) + var(--tabs-height) + 80px);
+  bottom: calc(var(--tabs-space) + 80px);
 }
 
 /*
@@ -1481,31 +1496,32 @@ body:has(.composer textarea:focus) .toast {
   text-align: right;
 }
 
-/* Barre d'onglets */
+/*
+ * Barre d'onglets : une bulle flottante, détachée des bords comme une bulle de message, avec quatre
+ * cases égales. Sur tablette et ordinateur, elle garde la largeur du contenu.
+ */
 
 .tabs {
   position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  right: 12px;
+  bottom: var(--tabs-inset);
+  left: 12px;
   z-index: 10;
   display: flex;
-  justify-content: center;
-  padding-bottom: var(--tabs-inset);
-  border-top: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  max-width: 536px;
+  margin: 0 auto;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
   backdrop-filter: blur(12px);
+  box-shadow: var(--bubble-shadow);
 }
 
-/*
- * Quatre cases égales sur la largeur du contenu (560 px au plus, comme #app) : sur tablette et
- * ordinateur, la barre s'aligne sur la page au lieu de s'étaler.
- */
-.tabs {
-  padding-inline: max(0px, calc((100% - 560px) / 2));
-}
-
+/* La case garde toute la hauteur de la barre pour le doigt ; la bulle est dessinée dedans. */
 .tab {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex: 1 1 0;
   align-items: center;
@@ -1515,9 +1531,28 @@ body:has(.composer textarea:focus) .toast {
   font-weight: 650;
 }
 
+.tab::after {
+  position: absolute;
+  inset: 6px 3px;
+  z-index: -1;
+  border-radius: 18px;
+  content: '';
+  transition: background-color 0.15s;
+}
+
+.tab:active::after {
+  background: var(--bubble-press);
+}
+
 .tab[aria-current='page'],
 .tab-menu[aria-expanded='true'] {
   color: var(--accent);
+}
+
+/* L'onglet ouvert, ou le ☰ quand son menu est ouvert, est posé dans une bulle. */
+.tab[aria-current='page']::after,
+.tab-menu[aria-expanded='true']::after {
+  background: var(--bubble-active);
 }
 
 /* Le ☰ ouvre le menu des autres pages. */
@@ -1547,40 +1582,43 @@ body:has(.composer textarea:focus) .toast {
   background: rgb(0 0 0 / 0.55);
 }
 
-/* Panneau du ☰, posé sur la barre du bas. */
+/* Panneau du ☰ : une bulle comme la barre, qui monte juste au-dessus d'elle, côté ☰. */
 .menu-sheet {
   position: fixed;
-  right: 0;
-  bottom: calc(var(--tabs-inset) + var(--tabs-height));
-  left: 0;
+  right: 12px;
+  bottom: var(--tabs-space);
+  left: 12px;
   z-index: 11;
   display: flex;
   flex-direction: column;
-  max-width: 560px;
+  gap: 2px;
+  max-width: 536px;
   /* En paysage, le panneau défile plutôt que de passer sous le haut de l'écran. */
-  max-height: calc(100dvh - var(--tabs-height) - var(--tabs-inset) - env(safe-area-inset-top) - 12px);
+  max-height: calc(100dvh - var(--tabs-space) - env(safe-area-inset-top) - 12px);
   margin: 0 auto;
-  padding: 8px;
+  padding: 6px;
   overflow-y: auto;
   border: 1px solid var(--line);
-  border-bottom: 0;
-  border-radius: var(--radius) var(--radius) 0 0;
-  background: var(--surface-2);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--bubble-shadow);
+  transform-origin: bottom right;
+  animation: bubble-up 0.16s ease-out;
 }
 
 .menu-item {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 14px 12px;
-  border-radius: calc(var(--radius) - 6px);
+  padding: 12px 14px;
+  border-radius: 18px;
   color: var(--text);
 }
 
-.menu-item + .menu-item {
-  border-top: 1px solid var(--line);
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+/* La page ouverte est dans une bulle, comme l'onglet actif. */
+.menu-item[aria-current='page'] {
+  background: var(--bubble-active);
 }
 
 .menu-item strong {
@@ -1598,7 +1636,7 @@ body:has(.composer textarea:focus) .toast {
 
 .menu-item:active,
 .menu-item:focus-visible {
-  background: var(--surface);
+  background: var(--bubble-press);
 }
 
 /* Chrono */
@@ -1835,7 +1873,7 @@ body:has(.composer textarea:focus) .toast {
 
 .toast {
   position: fixed;
-  bottom: calc(var(--tabs-inset) + var(--tabs-height) + 16px);
+  bottom: calc(var(--tabs-space) + 16px);
   left: 50%;
   z-index: 20;
   width: max-content;
@@ -1887,6 +1925,30 @@ body:has(.composer textarea:focus) .toast {
 @media (prefers-reduced-motion: reduce) {
   .toast {
     transition: none;
+  }
+}
+
+/* Les bulles des menus s'ouvrent en grandissant depuis leur bouton. */
+@keyframes bubble-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+
+@keyframes bubble-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-sheet,
+  .menu-list,
+  .tab::after {
+    transition: none;
+    animation: none;
   }
 }
 
