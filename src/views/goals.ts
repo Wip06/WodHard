@@ -50,7 +50,7 @@ function goalRow(status: GoalStatus): HTMLElement {
   );
 }
 
-/** Bloc « Objectifs » de l'onglet Suivi : en cours, puis atteints récemment, puis les plus anciens repliés. */
+/** Bloc « Objectifs » de la page Exploits : en cours, puis atteints récemment, puis les plus anciens repliés. */
 export function goalsBlock(): HTMLElement {
   const statuses = goalStatuses();
   const since = new Date(Date.now() - RECENT_DAYS * 86_400_000).toISOString().slice(0, 10);
@@ -105,7 +105,7 @@ let othersOpen = false;
 
 /**
  * Objectifs en cours, en tête de l'écran WOD : le plus proche en entier, les autres dans une liste
- * à déplier, par échéance. Les objectifs atteints restent dans l'onglet Suivi ; une course passée
+ * à déplier, par échéance. Les objectifs atteints restent dans la page Exploits ; une course passée
  * sans être atteinte n'y figure plus.
  */
 export function goalBanners(): HTMLElement | false {
@@ -237,7 +237,7 @@ export function goalView(id: string): View | null {
     if (!confirmed) return;
     deleteGoal(id);
     toast('Objectif supprimé');
-    navigate('/progress', true);
+    navigate('/exploits', true);
   };
 
   const link =
@@ -250,7 +250,7 @@ export function goalView(id: string): View | null {
   const el = h(
     'section',
     { class: 'page' },
-    pageHead(status.title, { href: '#/progress', label: 'Suivi' }),
+    pageHead(status.title, { href: '#/exploits', label: 'Exploits' }),
     h(
       'div',
       { class: `scoreboard goal ${status.achievedOn ? 'achieved' : ''}` },
@@ -287,7 +287,7 @@ export function goalView(id: string): View | null {
       h('button', { class: 'btn ghost danger block', onclick: () => void remove() }, 'Supprimer cet objectif'),
     ),
   );
-  return { el, tab: 'progress' };
+  return { el, tab: 'menu' };
 }
 
 type Kind = Goal['kind'];
@@ -586,11 +586,11 @@ export function goalFormView(id?: string, preset?: string): View | null {
     navigate(`/goal/${checked.value.id}`, true);
   };
 
-  const back = editing ? `#/goal/${editing.id}` : '#/progress';
+  const back = editing ? `#/goal/${editing.id}` : '#/exploits';
   const el = h(
     'section',
     { class: 'page' },
-    pageHead(editing ? 'Modifier l’objectif' : 'Nouvel objectif', { href: back, label: editing ? 'Objectif' : 'Suivi' }),
+    pageHead(editing ? 'Modifier l’objectif' : 'Nouvel objectif', { href: back, label: editing ? 'Objectif' : 'Exploits' }),
     h(
       'form',
       { class: 'form', novalidate: true, onsubmit: submit },
@@ -606,7 +606,7 @@ export function goalFormView(id?: string, preset?: string): View | null {
       h('a', { class: 'btn ghost block', href: back }, 'Annuler'),
     ),
   );
-  return { el, tab: 'progress' };
+  return { el, tab: 'menu' };
 }
 
 const ERROR_LABELS: Record<string, string> = {

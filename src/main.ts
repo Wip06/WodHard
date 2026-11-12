@@ -2,7 +2,9 @@ import './style.css';
 import { toast } from './dom';
 import { render, startRouter, type View } from './router';
 import { DATA_KEY, getSession, loadData, loadSession } from './store';
+import { achievementsView } from './views/achievements';
 import { activityFormView, activityView } from './views/activity';
+import { benchmarksView } from './views/benchmarks';
 import { nextBlockView } from './views/blocks';
 import { chronoRunView, chronoView } from './views/chrono';
 import { chatView, proposalView } from './views/chat';
@@ -14,6 +16,7 @@ import { historyView, recapView, resultView } from './views/history';
 import { liftsView, liftView } from './views/lifts';
 import { progressView } from './views/progress';
 import { scoreView } from './views/score';
+import { sharedWodView } from './views/shared';
 import { timerView } from './views/timer';
 import { addWodView, wodDetailView, wodListView } from './views/wods';
 
@@ -34,6 +37,9 @@ const routes: [RegExp, (...params: string[]) => View | null][] = [
   [/^\/next$/, nextBlockView],
   [/^\/score(?:\/([\w-]+))?$/, scoreView],
   [/^\/history$/, historyView],
+  [/^\/exploits$/, achievementsView],
+  [/^\/bibliotheque$/, benchmarksView],
+  [/^\/partage\/([A-Za-z0-9_-]+)$/, sharedWodView],
   [/^\/history\/([\w-]+)$/, resultView],
   [/^\/history\/([\w-]+)\/recap$/, recapView],
   [/^\/settings$/, settingsView],

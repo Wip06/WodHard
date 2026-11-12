@@ -5,11 +5,14 @@ import {
   COACH_FORMAT,
   CoachError,
   coachReady,
+  coachUsage,
   correctionRequest,
   DEFAULT_MODEL,
   generate,
   loadCoach,
+  replyCost,
   replyText,
+  usdText,
   type CoachSettings,
 } from '../src/claude';
 import { parseImport } from '../src/validate';
@@ -117,6 +120,23 @@ describe('demande envoyée à Claude', () => {
   });
 });
 
+describe('dépense du coach', () => {
+  it('compte entrée, sortie et cache au tarif du modèle qui a répondu', () => {
+    const usage = { input_tokens: 1000, output_tokens: 2000, cache_read_input_tokens: 10_000, cache_creation_input_tokens: 4000 };
+    // Opus 5.5 : 4 $ en entrée, 20 $ en sortie, 0,20 $ en cache lu, 5 $ en cache écrit, par million.
+    expect(replyCost('claude-opus-5-5', usage)).toBeCloseTo((1000 * 4 + 2000 * 20 + 10_000 * 0.2 + 4000 * 5) / 1_000_000, 10);
+    expect(replyCost('claude-sonnet-5-5', usage)).toBeCloseTo((1000 * 2 + 2000 * 10 + 10_000 * 0.1 + 4000 * 2.5) / 1_000_000, 10);
+    // Un modèle de repli inconnu est compté au tarif du modèle choisi.
+    expect(replyCost('claude-opus-4-8', usage, 'claude-sonnet-5-5')).toBe(replyCost('claude-sonnet-5-5', usage));
+  });
+
+  it('s’affiche en dollars, arrondie au centime', () => {
+    expect(usdText(0.4234)).toBe('≈ 0,42 $');
+    expect(usdText(0.003)).toBe('< 0,01 $');
+    expect(usdText(12)).toBe('≈ 12,00 $');
+  });
+});
+
 describe('génération', () => {
   it('reçoit la réponse au fil de l’eau, depuis le navigateur, avec la clé de l’athlète', async () => {
     const { impl, calls } = fakeFetch(textStream(['Bon', 'jour !']));
@@ -131,6 +151,18 @@ describe('génération', () => {
     expect(call?.headers.get('anthropic-dangerous-direct-browser-access')).toBe('true');
     expect(call?.headers.get('anthropic-beta')).toContain('server-side-fallback-2026-07-01');
     expect(call?.body).toMatchObject({ stream: true, fallbacks: 'default', system: 'Profil : intermédiaire.\n\nRÈGLES' });
+  });
+
+  it('cumule la dépense estimée du mois, réponse après réponse', async () => {
+    const { impl } = fakeFetch(textStream(['Un']), textStream(['Deux']));
+    await generate(settings, [{ role: 'user', text: 'Salut' }], { fetch: impl });
+    await generate(settings, [{ role: 'user', text: 'Encore' }], { fetch: impl });
+    // Chaque réponse : 10 tokens en entrée à 4 $, 5 en sortie à 20 $ (par million).
+    const usage = coachUsage();
+    expect(usage.replies).toBe(2);
+    expect(usage.usd).toBeCloseTo(2 * (10 * 4 + 5 * 20) / 1_000_000, 10);
+    // Un nouveau mois repart de zéro.
+    expect(coachUsage('2099-01')).toEqual({ month: '2099-01', usd: 0, replies: 0 });
   });
 
   it('prévient quand Claude décline la demande', async () => {

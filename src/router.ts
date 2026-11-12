@@ -20,6 +20,8 @@ const TABS: { tab: Tab; path: string; label: string }[] = [
 const MENU: { path: string; label: string; hint: string }[] = [
   { path: '/chrono', label: 'Chrono libre', hint: 'Chrono, minuteur, intervalles (Tabata, EMOM…)' },
   { path: '/history', label: 'Toutes mes séances', hint: 'Tout ton historique, WOD et autres sports' },
+  { path: '/exploits', label: 'Exploits', hint: 'Tes objectifs et tes records : course, vélo, Hyrox, charges…' },
+  { path: '/bibliotheque', label: 'Bibliothèque de WOD', hint: 'Fran, Cindy, Murph… les classiques, prêts à ajouter' },
   { path: '/settings', label: 'Réglages', hint: 'Coach, sauvegarde, import' },
 ];
 

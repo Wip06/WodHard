@@ -146,6 +146,10 @@ function download(file: File): void {
  * « Enregistrer dans Fichiers ») est plus fiable qu'un téléchargement, surtout pour une PWA installée
  * sur iOS ; ailleurs, le fichier est téléchargé. Renvoie false si l'utilisateur a annulé.
  */
+/** Ouverte depuis l'écran d'accueil (appli installée) plutôt que dans un onglet du navigateur. */
+export const isInstalledApp = () =>
+  window.matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
 export async function offerFile(file: File): Promise<boolean> {
   const touch = window.matchMedia('(pointer: coarse)').matches;
   if (touch && navigator.canShare?.({ files: [file] })) {

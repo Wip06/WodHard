@@ -1,8 +1,8 @@
 import { unlockAudio } from '../audio';
-import { choose, h, toast } from '../dom';
+import { choose, copyText, h, toast } from '../dom';
 import { addDays, dateLabel, dayLabel, daysBetween, plural, scoreLine, today, wodHeadline, wodSummary } from '../format';
 import { navigate, render, type View } from '../router';
-import { agoText, canBeReference, type Reference } from '../references';
+import { agoText, canBeReference, REFERENCE_WEEKS, type Reference } from '../references';
 import { matchesQuery, searchText } from '../search';
 import {
   addPlan,
@@ -24,18 +24,20 @@ import {
   references,
   resultsFor,
   sameWorkout,
+  setReference,
   setSession,
   sortedResults,
   snoozeBackup,
   visiblePlan,
   type PlannedWod,
 } from '../store';
+import { shareUrl, unwrapSharedLink } from '../share';
 import { newClock } from '../timer';
 import type { SavedWod } from '../types';
 import { isDate, parseImport, type Import } from '../validate';
 import { exportData } from './data';
 import { startBlock } from './blocks';
-import { badges, field, pageHead, resultRow, typeBadge, wodSheet } from './parts';
+import { actionMenu, badges, field, pageHead, resultRow, typeBadge, wodSheet } from './parts';
 import { goalBanners, goalLinks, sameWorkGoal } from './goals';
 import { progressionChart, referenceChip, referenceSection } from './references';
 
@@ -76,18 +78,13 @@ function wodCardContent(saved: SavedWod): Content {
   ];
 }
 
-/** Objectifs en cours sur ce WOD, et de quoi en fixer un (sur un AMRAP, un For Time ou un Hyrox). */
+/** Un objectif se fixe sur le score d'un AMRAP, d'un For Time ou d'un Hyrox. */
+const goalable = (saved: SavedWod) => saved.wod.type === 'amrap' || saved.wod.type === 'for_time' || saved.wod.type === 'hyrox';
+
+/** Objectifs en cours sur ce WOD ; en fixer un passe par le menu ⋯ de la fiche. */
 function goalSection(saved: SavedWod): HTMLElement | false {
-  const { wod } = saved;
-  if (wod.type !== 'amrap' && wod.type !== 'for_time' && wod.type !== 'hyrox') return false;
-  const goals = goalLinks(sameWorkGoal(wod));
-  return h(
-    'section',
-    { class: 'stack' },
-    h('h2', { class: 'section-title' }, 'Objectif'),
-    goals,
-    h('a', { class: `btn block ${goals ? 'ghost' : ''}`, href: `#/goal/new/wod:${saved.id}` }, goals ? 'Fixer un autre objectif' : 'Fixer un objectif sur ce WOD'),
-  );
+  const goals = goalable(saved) && goalLinks(sameWorkGoal(saved.wod));
+  return goals ? h('section', { class: 'stack' }, h('h2', { class: 'section-title' }, 'Objectif'), goals) : false;
 }
 
 /** WOD de référence dont le délai est écoulé : quand il a été fait, et son record. */
@@ -378,44 +375,15 @@ export function wodListView(): View {
     h('div', { class: 'select-actions' }, actionBtn, cancelBtn),
   );
 
-  const menuToggle = h('summary', { class: 'btn', title: 'Actions sur plusieurs WOD', 'aria-label': 'Actions sur plusieurs WOD' }, '⋯');
-  const menu = h(
-    'details',
-    { class: 'menu' },
-    menuToggle,
-    h(
-      'div',
-      { class: 'menu-list' },
-      SELECT_MODES.map(({ mode: value, menu: label }) =>
-        h(
-          'button',
-          {
-            type: 'button',
-            class: value === 'delete' ? 'danger' : '',
-            disabled: value === 'unplan' && plan.length === 0,
-            onclick: () => setMode(value),
-          },
-          label,
-        ),
-      ),
-    ),
+  const { el: menu, close: closeMenu } = actionMenu(
+    'Actions sur plusieurs WOD',
+    SELECT_MODES.map(({ mode: value, menu: label }) => ({
+      label,
+      danger: value === 'delete',
+      disabled: value === 'unplan' && plan.length === 0,
+      run: () => setMode(value),
+    })),
   );
-  // Le menu se ferme d'un clic à côté ou avec Échap, comme un menu.
-  function onOutside(event: Event): void {
-    const escape = event instanceof KeyboardEvent && event.key === 'Escape';
-    if (!menu.isConnected || escape || (event.type === 'click' && !menu.contains(event.target as Node))) closeMenu();
-    if (escape && menu.isConnected) menuToggle.focus();
-  }
-  function closeMenu(): void {
-    menu.open = false;
-    document.removeEventListener('click', onOutside, true);
-    document.removeEventListener('keydown', onOutside);
-  }
-  menu.addEventListener('toggle', () => {
-    if (!menu.open) return closeMenu();
-    document.addEventListener('click', onOutside, true);
-    document.addEventListener('keydown', onOutside);
-  });
 
   function refreshBar(): void {
     if (!mode) return;
@@ -677,11 +645,10 @@ export function wodListView(): View {
       ),
     getWods().length > 0
       ? [h('div', { class: 'row' }, search), lists, bar]
-      : h(
-          'p',
-          { class: 'empty' },
-          'Aucun WOD pour l’instant. Demande-en un au coach ou colle sa réponse, ou crée-le à la main.',
-        ),
+      : [
+          h('p', { class: 'empty' }, 'Aucun WOD pour l’instant. Demande-en un au coach ou colle sa réponse, ou crée-le à la main.'),
+          h('a', { class: 'btn block', href: '#/bibliotheque' }, 'Commencer par un classique : Fran, Cindy, Murph…'),
+        ],
   );
   renderLists();
   return { el, tab: 'wods' };
@@ -727,7 +694,8 @@ export function addWodView(): View {
 
   const submit = () => {
     if (input.value.trim() === '') return showErrors(['Colle d’abord le JSON du WOD ou du programme.']);
-    const checked = parseImport(input.value);
+    // Un lien de partage collé tel quel : on en lit le WOD.
+    const checked = parseImport(unwrapSharedLink(input.value));
     if (!checked.ok) return showErrors(checked.errors);
     saveImport(checked.value);
   };
@@ -768,6 +736,23 @@ export function wodDetailView(id: string): View | null {
   const past = resultsFor(id);
   const records = currentRecords();
   const pending = visiblePlan().filter((row) => row.saved.id === id && !row.done);
+
+  /**
+   * Un lien qui contient le WOD : partagé depuis le téléphone (messagerie, mail…), copié ailleurs.
+   * Le partage est lancé sur le toucher même, sinon Safari le refuse.
+   */
+  const share = async () => {
+    const url = shareUrl(wod);
+    if (window.matchMedia('(pointer: coarse)').matches && navigator.share) {
+      try {
+        await navigator.share({ title: wod.title, text: `${wod.title}, un WOD à faire avec WODHARD`, url });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+      }
+    }
+    toast((await copyText(url)) ? 'Lien copié : envoie-le à qui tu veux' : 'Copie impossible');
+  };
 
   const start = () => {
     // Une séance en blocs démarre par son premier bloc ; le chrono enchaînera les suivants.
@@ -810,17 +795,33 @@ export function wodDetailView(id: string): View | null {
     navigate('/', true);
   };
 
+  const isReference = saved.reference_weeks !== undefined;
+  const toggleReference = () => {
+    setReference(id, isReference ? null : REFERENCE_WEEKS);
+    toast(isReference ? 'Ce WOD n’est plus une référence' : `WOD de référence : à refaire toutes les ${REFERENCE_WEEKS} semaines`);
+    render();
+  };
+  // Les actions occasionnelles, rangées dans le ⋯ : la fiche ne garde que le chrono et le programme.
+  const menu = actionMenu('Actions sur ce WOD', [
+    { label: 'Partager ce WOD', run: () => void share() },
+    { label: 'Modifier', run: () => navigate(`/edit/${id}`) },
+    { label: 'Dupliquer', run: () => navigate(`/copy/${id}`) },
+    ...(goalable(saved) ? [{ label: 'Fixer un objectif', run: () => navigate(`/goal/new/wod:${id}`) }] : []),
+    ...(canBeReference(saved) ? [{ label: isReference ? 'Ne plus en faire une référence' : 'En faire un WOD de référence', run: toggleReference }] : []),
+    { label: 'Supprimer ce WOD', danger: true, run: () => void remove() },
+  ]);
+
   const el = h(
     'section',
     { class: 'page' },
-    pageHead('', { href: '#/', label: 'WOD' }),
+    h('div', { class: 'sheet-nav' }, h('a', { class: 'back', href: '#/' }, '‹ WOD'), menu.el),
     wodSheet(wod),
     h(
       'div',
       { class: 'stack' },
       h('button', { class: 'btn primary big block', onclick: start }, 'Lancer le chrono'),
       h('p', { class: 'hint' }, 'Départ après un décompte de 10 secondes.'),
-      h('button', { class: 'btn block', onclick: scoreWithoutTimer }, 'Saisir un score sans chrono'),
+      h('button', { class: 'btn ghost block', onclick: scoreWithoutTimer }, 'Saisir un score sans chrono'),
     ),
     h(
       'section',
@@ -851,17 +852,6 @@ export function wodDetailView(id: string): View | null {
           past.map((result) => resultRow(result, false, records.has(result.id))),
         ),
       ),
-    h(
-      'div',
-      { class: 'stack' },
-      h(
-        'div',
-        { class: 'row' },
-        h('a', { class: 'btn grow', href: `#/edit/${id}` }, 'Modifier'),
-        h('a', { class: 'btn grow', href: `#/copy/${id}` }, 'Dupliquer'),
-      ),
-      h('button', { class: 'btn ghost danger block', onclick: () => void remove() }, 'Supprimer ce WOD'),
-    ),
   );
   return { el, tab: 'wods' };
 }

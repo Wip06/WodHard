@@ -41,6 +41,7 @@ Conseils :
 - **Le profil** fait toute la différence : plus il est précis, plus les séances te ressemblent. Un exemple juste en dessous.
 - Ta clé reste sur ton téléphone et ne fait pas partie des sauvegardes. Ne la partage pas : tout message envoyé avec elle est facturé sur ton compte.
 - À chaque message, ton profil et ton historique sont envoyés à Anthropic.
+- **Ta dépense** : l'appli estime ce que le coach t'a coûté ce mois-ci, sous « Coach » dans la conversation et dans ses réglages. Le montant exact est sur console.anthropic.com.
 
 #### Exemple de « Profil et consignes »
 
@@ -61,7 +62,7 @@ Consignes : réponds en français, court et direct. Explique en une phrase
 les mouvements techniques et donne une option plus facile pour chacun.
 ```
 
-Inutile d'y décrire le format des WOD : l'appli le fournit au coach. Tes objectifs de **Suivi**, ton historique et ton programme lui sont aussi envoyés à chaque conversation : ici, mets ce que l'appli ne sait pas (ta box, tes horaires, tes douleurs, ta façon d'aimer t'entraîner…). Ton profil évolue ? Mets-le à jour dans les mêmes réglages.
+Inutile d'y décrire le format des WOD : l'appli le fournit au coach. Tes objectifs (page **Exploits**), ton historique et ton programme lui sont aussi envoyés à chaque conversation : ici, mets ce que l'appli ne sait pas (ta box, tes horaires, tes douleurs, ta façon d'aimer t'entraîner…). Ton profil évolue ? Mets-le à jour dans les mêmes réglages.
 
 Pour l'option B, ce même texte va en tête des instructions de ton projet, avant les règles du coach.
 
@@ -97,11 +98,11 @@ Avec l'option B, le coach ne connaît que ce que tu lui colles : recopie ton his
 
 ## 4. Premiers pas
 
-1. **Ajoute ton premier WOD** : onglet **WOD** › **Créer un WOD** pour le saisir à la main, **Coller un WOD** pour la réponse d'un coach, ou demande-le à l'onglet **Coach**.
+1. **Ajoute ton premier WOD** : onglet **WOD** › **Créer un WOD** pour le saisir à la main, **Coller un WOD** pour la réponse d'un coach, demande-le à l'onglet **Coach**, ou pioche un classique (Fran, Cindy, Murph…) dans le menu ☰ › **Bibliothèque de WOD**.
 2. **Fais-le** : ouvre le WOD › **Lancer le chrono**. Le chrono te guide tour par tour et garde l'écran allumé quand le téléphone le permet.
 3. **Note ton score** à la fin, avec ton **RPE** (effort ressenti, de 1 à 10). Le RPE est facultatif, mais c'est lui qui calcule ta charge d'entraînement dans Suivi.
 4. **Planifie la suite** : sur la fiche d'un WOD, choisis une date › **Planifier**. Pour déplacer ou supprimer plusieurs WOD d'un coup : bouton **⋯** en haut à droite de l'écran WOD.
-5. **Fixe-toi un objectif** : onglet **Suivi** › **+ Nouvel objectif** (une charge, un score sur un WOD, une course Hyrox, un semi…). Le plus proche s'affiche en haut de l'écran WOD.
+5. **Fixe-toi un objectif** : menu ☰ › **Exploits** › **+ Nouvel objectif** (une charge, un score sur un WOD, une course Hyrox, un semi…). Le plus proche s'affiche en haut de l'écran WOD.
 6. **Note tes autres sports** (course, vélo, natation…) : onglet **Suivi** › **+ Ajouter une activité**. Le coach en tient compte.
 
 ## 5. Se repérer
@@ -110,13 +111,15 @@ Avec l'option B, le coach ne connaît que ce que tu lui colles : recopie ton his
 |---|---|
 | **WOD** | Ton programme, les WOD à faire, Coller / Créer un WOD, et le bouton ⋯ pour reprogrammer, retirer du programme ou supprimer plusieurs WOD. |
 | **Coach** | La conversation avec le coach. |
-| **Suivi** | Tes objectifs, ta semaine, ta régularité, ta charge d'entraînement, tes records… |
-| **☰** | Chrono libre, Toutes mes séances (tout ton historique), Réglages (coach, sauvegarde, import). |
+| **Suivi** | Ta semaine, ta régularité, ta charge d'entraînement, ta répartition, tes autres sports… |
+| **☰** | Chrono libre, Toutes mes séances (tout ton historique), Exploits (tes objectifs et tes records), Bibliothèque de WOD (les classiques), Réglages (coach, sauvegarde, import). |
 
 ## 6. Bon à savoir
 
 - **Sans réseau** : une fois installée, l'appli fonctionne hors ligne. Seul le coach de l'option A a besoin d'internet.
-- **WOD de référence** (Fran, Cindy, un test maison…) : sur la fiche du WOD, **En faire un WOD de référence**. L'appli te rappelle de le refaire et trace ta courbe de progression.
+- **WOD de référence** (Fran, Cindy, un test maison…) : sur la fiche du WOD, bouton **⋯** en haut à droite › **En faire un WOD de référence**. L'appli te rappelle de le refaire et trace ta courbe de progression.
 - **Refaire un WOD déjà fait** : menu ☰ › **Toutes mes séances**, ouvre la séance › **Refaire ce WOD**. La recherche de l'écran WOD le trouve aussi.
 - **Strava** : depuis une séance › **Récapitulatif**, enregistre l'image dans tes photos et ajoute-la à ton activité Strava.
+- **Tes records** (5 km, 10 km, sortie vélo, stations Hyrox, charges, WOD refaits…) : menu ☰ › **Exploits**. Touche un record pour ouvrir la séance d'où il vient. Tu y trouves aussi tes temps prédits en course et ton Hyrox idéal, et tes jalons (séances, kilomètres, heures, tonnage), cette année ou depuis le début. Un record battu depuis moins de 30 jours porte le badge **Nouveau**.
+- **Partager un WOD** : sur sa fiche, bouton **⋯** › **Partager ce WOD** envoie un lien. Le même menu sert à modifier, dupliquer, supprimer le WOD ou y fixer un objectif. Ton ami l'ouvre et ajoute le WOD en un toucher. S'il utilise l'appli installée sur iPhone, il copie le lien et le colle dans **Coller un WOD**.
 - **Chrono sans WOD** (échauffement, Tabata, repos…) : menu ☰ › **Chrono libre**.

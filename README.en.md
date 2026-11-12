@@ -10,9 +10,10 @@ The app's interface is in French; the documentation is available in English.
 
 ## What it does
 
-- **Program and timer**: plan your WODs (AMRAP, EMOM, For Time, Hyrox, strength, multi-block sessions) and do them with a timer that guides you round by round.
-- **Scores and records**: each session is saved with your RPE and round splits, and the app tracks your records and benchmark WODs.
-- **Progress**: your week, your consistency, your training load, your other sports and your goals, down to a race plan for a Hyrox.
+- **Program and timer**: plan your WODs (AMRAP, EMOM, For Time, Hyrox, strength, multi-block sessions) and do them with a timer that guides you round by round. Pick from a library of classics (Fran, Cindy, Murph…), and share a WOD with a friend through a simple link.
+- **Scores**: each session is saved with your RPE and round splits, and your benchmark WODs come back at regular intervals.
+- **Progress**: your week, your consistency, your training load and your other sports.
+- **Achievements**: your goals, down to a race plan for a Hyrox, and your records in running, cycling, Hyrox, loads and WODs.
 - **Coach**: it prepares your sessions and programs from your profile and history, in the app or in your usual AI app.
 
 ## Principles

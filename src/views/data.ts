@@ -1,4 +1,4 @@
-import { choose, copyText, h, offerFile, toast } from '../dom';
+import { choose, copyText, h, isInstalledApp, offerFile, toast } from '../dom';
 import { plural, today } from '../format';
 import { render, type View } from '../router';
 import {
@@ -54,11 +54,6 @@ export function exportData(): void {
   ]);
 }
 
-/** Ouverte depuis l'écran d'accueil (appli installée) plutôt que dans un onglet du navigateur. */
-const installed = () =>
-  window.matchMedia('(display-mode: standalone)').matches ||
-  (navigator as Navigator & { standalone?: boolean }).standalone === true;
-
 /** Réglages : coach, sauvegarde et import, copie de l'historique, chiffres de l'appli. */
 export function settingsView(): View {
   const exported = lastExport();
@@ -70,7 +65,7 @@ export function settingsView(): View {
    * échappe au moins à l'effacement après 7 jours sans ouverture (Safari), mais pas au manque de place.
    */
   const showProtection = (yes: boolean) => {
-    const home = installed();
+    const home = isInstalledApp();
     persisted.textContent = yes ? 'oui' : home ? 'en partie' : 'non';
     installHint.textContent = home
       ? 'Installée sur l’écran d’accueil, l’appli n’est pas effacée après 7 jours sans ouverture. Le système peut quand même vider ses données si l’appareil manque de place : exporte une sauvegarde de temps en temps.'

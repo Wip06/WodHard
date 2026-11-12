@@ -31,7 +31,10 @@ npm run preview # serve the built version, as it runs online
 | `src/` | The code. `main.ts` declares the pages, `router.ts` handles navigation and the bottom bar, `views/` has one file per screen. |
 | `src/store.ts` | Reading and writing data, backups, the history copied for the coach. |
 | `src/validate.ts` | Checks everything that comes in: pasted WODs, programs, imported backups, coach replies. Unknown fields are rejected. |
-| `src/claude.ts` | The coach: API calls, available models, error messages. |
+| `src/claude.ts` | The coach: API calls, available models and their prices, estimated spending, error messages. |
+| `src/achievements.ts` | The records, predictions and milestones of the Exploits page. |
+| `src/benchmarks.ts` | The classic WODs of the WOD library. |
+| `src/share.ts` | Sharing a WOD through a link: the WOD is encoded in the address, after `#/partage/`. |
 | `test/` | The tests, one file per tested module of `src/` (`validate.test.ts` for `validate.ts`…). |
 | `documentations/` | The guides, in French (`fr/`) and English (`en/`), and the coach rules. |
 | `public/icons/` | The app icons. |
@@ -46,6 +49,8 @@ The format of a backup, a WOD and a program is checked by `src/validate.ts`. If 
 
 The rules the app sends to the coach with each message are in [`../fr/regles-du-coach.md`](../fr/regles-du-coach.md), in French: the built-in coach answers in French. `src/claude.ts` loads them as is. The same rules serve anyone using a coach in another AI app; their English translation is [`coach-rules.md`](coach-rules.md).
 
+The spending shown is an estimate: the tokens returned by the API, multiplied by the prices in `MODELS` in `src/claude.ts`. Update those prices if Anthropic changes them or if you add a model.
+
 If you change the WOD format:
 
 1. Update `src/validate.ts`.
@@ -54,7 +59,8 @@ If you change the WOD format:
 
 ## Security
 
-- **No raw HTML**: `h()` creates text through text nodes, never through `innerHTML`. A pasted WOD or a coach reply therefore can't inject code. Keep it that way.
+- **No raw HTML**: `h()` creates text through text nodes, never through `innerHTML`. A pasted WOD, one received through a link or one suggested by the coach therefore can't inject code. Keep it that way.
+- **Everything that comes in is checked**: a WOD received through a link goes through `src/validate.ts`, like a pasted WOD.
 - **Content Security Policy (CSP)**: `vite.config.ts` adds it to the page at build time only. It only allows the app's own files and connections to `https://api.anthropic.com`. If you add an external resource or another service, add it to the policy, then check the built version with `npm run preview`.
 - **Styles**: computed sizes (meters, charts) go through `el.style`, which `h()` handles for the `style` attribute. The CSP rejects hard-coded `style` attributes.
 

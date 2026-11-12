@@ -1,6 +1,6 @@
-import { h, toast } from '../dom';
+import { h } from '../dom';
 import { dateLabel, scoreLine, today } from '../format';
-import { agoText, canBeReference, REFERENCE_CHOICES, REFERENCE_WEEKS, type Reference } from '../references';
+import { agoText, canBeReference, REFERENCE_CHOICES, type Reference } from '../references';
 import { compareScores } from '../records';
 import { performance } from '../stats';
 import { references, setReference } from '../store';
@@ -69,26 +69,8 @@ export function progressionChart(results: Result[]): HTMLElement | false {
 export function referenceSection(saved: SavedWod, onChange: () => void): HTMLElement | false {
   if (!canBeReference(saved)) return false;
   const reference = references().find((candidate) => candidate.saved.id === saved.id);
-  if (!reference) {
-    return h(
-      'section',
-      { class: 'stack' },
-      h('h2', { class: 'section-title' }, 'Référence'),
-      h('p', { class: 'hint left' }, 'Un WOD de référence se refait régulièrement pour mesurer ta progression : l’appli te rappelle quand le refaire.'),
-      h(
-        'button',
-        {
-          class: 'btn block',
-          onclick: () => {
-            setReference(saved.id, REFERENCE_WEEKS);
-            toast('WOD de référence');
-            onChange();
-          },
-        },
-        'En faire un WOD de référence',
-      ),
-    );
-  }
+  // Pas une référence : rien à montrer, le menu ⋯ de la fiche permet d'en faire une.
+  if (!reference) return false;
   const weeks = h(
     'select',
     { 'aria-label': 'Délai avant de le refaire' },
@@ -106,18 +88,6 @@ export function referenceSection(saved: SavedWod, onChange: () => void): HTMLEle
     h('h2', { class: 'section-title' }, 'Référence'),
     h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'À refaire toutes les'), weeks),
     h('p', { class: `hint left ${reference.due ? 'due' : ''}` }, reference.last ? `Dernière fois ${agoText(reference.last.date, today())} · ${dueText(reference)}` : 'Pas encore fait : lance-le pour avoir ton premier score.'),
-    h(
-      'button',
-      {
-        class: 'btn ghost block',
-        onclick: () => {
-          setReference(saved.id, null);
-          toast('Ce WOD n’est plus une référence');
-          onChange();
-        },
-      },
-      'Ne plus en faire une référence',
-    ),
   );
 }
 

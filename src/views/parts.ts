@@ -23,6 +23,62 @@ import { activityLine, activityName } from '../sports';
 import { restOf } from '../strength';
 import type { Activity, Exercise, Movement, Result, SingleWod, Wod } from '../types';
 
+export interface MenuItem {
+  label: string;
+  /** Appelée sur le toucher même : le partage et le presse-papiers y restent permis. */
+  run: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+}
+
+/**
+ * Bouton ⋯ et sa liste d'actions, en bulle. Il se ferme d'un clic à côté, avec Échap, ou quand une
+ * action est choisie.
+ */
+export function actionMenu(label: string, items: MenuItem[]): { el: HTMLElement; close: () => void } {
+  const toggle = h('summary', { class: 'btn', title: label, 'aria-label': label }, '⋯');
+  const menu = h(
+    'details',
+    { class: 'menu' },
+    toggle,
+    h(
+      'div',
+      { class: 'menu-list' },
+      items.map((item) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: item.danger ? 'danger' : '',
+            disabled: item.disabled === true,
+            onclick: () => {
+              close();
+              item.run();
+            },
+          },
+          item.label,
+        ),
+      ),
+    ),
+  );
+  function onOutside(event: Event): void {
+    const escape = event instanceof KeyboardEvent && event.key === 'Escape';
+    if (!menu.isConnected || escape || (event.type === 'click' && !menu.contains(event.target as Node))) close();
+    if (escape && menu.isConnected) toggle.focus();
+  }
+  function close(): void {
+    menu.open = false;
+    document.removeEventListener('click', onOutside, true);
+    document.removeEventListener('keydown', onOutside);
+  }
+  menu.addEventListener('toggle', () => {
+    if (!menu.open) return close();
+    document.addEventListener('click', onOutside, true);
+    document.addEventListener('keydown', onOutside);
+  });
+  return { el: menu, close };
+}
+
 export function pageHead(title: string, back?: { href: string; label: string }): HTMLElement {
   return h(
     'header',

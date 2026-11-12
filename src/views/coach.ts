@@ -1,4 +1,4 @@
-import { checkKey, CoachError, loadCoach, MODELS, saveCoach } from '../claude';
+import { checkKey, CoachError, coachUsage, loadCoach, MODELS, saveCoach, usdText } from '../claude';
 import { choose, h, toast } from '../dom';
 import { navigate, render, type View } from '../router';
 import { field, pageHead } from './parts';
@@ -8,6 +8,7 @@ const CONSOLE = 'https://console.anthropic.com/';
 /** Réglages du coach : clé API, modèle et profil, gardés sur cet appareil. */
 export function coachView(): View {
   const saved = loadCoach();
+  const usage = coachUsage();
 
   const key = h('input', {
     type: 'password',
@@ -94,6 +95,12 @@ export function coachView(): View {
       'div',
       { class: 'notice' },
       h('p', null, 'L’API est payante, à l’usage : chaque message est facturé sur ton compte Anthropic. Elle n’est pas comprise dans les abonnements Pro ou Max d’Anthropic.'),
+      usage.replies > 0 &&
+        h(
+          'p',
+          null,
+          `Ce mois-ci : ${usdText(usage.usd)} pour ${usage.replies} réponse${usage.replies > 1 ? 's' : ''}, estimé sur cet appareil. Le montant exact est sur console.anthropic.com.`,
+        ),
     ),
     saved.key === '' &&
       saved.instructions !== '' &&

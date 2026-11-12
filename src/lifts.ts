@@ -30,7 +30,7 @@ export interface Lift {
 }
 
 /** Les parties de force d'une séance : le WOD lui-même, ou ses blocs de force. */
-function strengthParts({ wod, score }: Result): [StrengthWod, StrengthScore][] {
+export function strengthParts({ wod, score }: Result): [StrengthWod, StrengthScore][] {
   if (wod.type === 'strength' && 'exercises' in score) return [[wod, score]];
   if (wod.type !== 'session' || !('blocks' in score)) return [];
   return wod.blocks.flatMap((block, i): [StrengthWod, StrengthScore][] => {

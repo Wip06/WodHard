@@ -18,8 +18,8 @@
   --good: #4ade80;
   --radius: 14px;
   --gutter: 16px;
-  /* 48 px : la taille d'une barre d'onglets native, au-dessus des 44 px conseillés pour le toucher. */
-  --tabs-height: 48px;
+  /* 56 px : une barre flottante généreuse, dont la bulle de l'onglet actif fait 44 px de haut. */
+  --tabs-height: 56px;
   /*
    * Écart sous la barre flottante : de quoi passer au-dessus du trait d'accueil de l'iPhone
    * (sa marge moins 16 px), et 10 px au moins ailleurs.
@@ -128,6 +128,18 @@ a {
   padding: 6px 10px 6px 0;
   color: var(--muted);
   font-weight: 600;
+}
+
+/* Fiche d'un WOD : retour à gauche, actions ⋯ à droite. */
+.sheet-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sheet-nav .back {
+  align-self: center;
 }
 
 .brand h1 {
@@ -2486,6 +2498,69 @@ body:has(.composer textarea:focus) .toast {
 .record-lines a {
   color: inherit;
   text-decoration: none;
+}
+
+/* Exploits : un record par ligne, son nom et sa valeur, puis son détail et sa date. */
+.trophies {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trophies li + li {
+  border-top: 1px solid var(--line);
+}
+
+.trophy {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  padding: 10px 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.trophy-label {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+/* Record battu ou palier franchi ces 30 derniers jours. */
+.trophy-new {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bubble-active);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 2px;
+}
+
+.trophy-value {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.trophy-detail,
+.trophy-date {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.trophy-detail {
+  grid-column: 1;
+}
+
+.trophy-date {
+  grid-column: 2;
+  text-align: right;
 }
 
 .badge.sport {

@@ -31,7 +31,10 @@ npm run preview # servir la version construite, comme en ligne
 | `src/` | Le code. `main.ts` déclare les pages, `router.ts` gère la navigation et la barre du bas, `views/` contient un fichier par écran. |
 | `src/store.ts` | Lecture et écriture des données, sauvegardes, historique copié pour le coach. |
 | `src/validate.ts` | Vérification de tout ce qui entre : WOD collés, programmes, sauvegardes importées, réponses du coach. Un champ inconnu est refusé. |
-| `src/claude.ts` | Le coach : appel à l'API, modèles proposés, messages d'erreur. |
+| `src/claude.ts` | Le coach : appel à l'API, modèles proposés et leurs tarifs, dépense estimée, messages d'erreur. |
+| `src/achievements.ts` | Les records, prédictions et jalons de la page Exploits. |
+| `src/benchmarks.ts` | Les WOD classiques de la Bibliothèque de WOD. |
+| `src/share.ts` | Le partage d'un WOD par lien : le WOD est encodé dans l'adresse, après `#/partage/`. |
 | `test/` | Les tests, un fichier par module testé de `src/` (`validate.test.ts` pour `validate.ts`…). |
 | `documentations/` | Les guides, en français (`fr/`) et en anglais (`en/`), et les règles du coach. |
 | `public/icons/` | Les icônes de l'appli. |
@@ -46,6 +49,8 @@ Le format d'une sauvegarde, d'un WOD et d'un programme est vérifié par `src/va
 
 Les règles que l'appli envoie au coach, avec chaque message, sont dans [`regles-du-coach.md`](regles-du-coach.md), en français : le coach intégré répond en français. `src/claude.ts` les charge telles quelles. Les mêmes règles servent à qui utilise un coach dans une autre appli d'IA ; leur traduction anglaise est dans [`../en/coach-rules.md`](../en/coach-rules.md).
 
+La dépense affichée est une estimation : les tokens renvoyés par l'API, multipliés par les tarifs de `MODELS` dans `src/claude.ts`. Mets ces tarifs à jour si Anthropic change ses prix ou si tu ajoutes un modèle.
+
 Si tu changes le format des WOD :
 
 1. Modifie `src/validate.ts`.
@@ -54,7 +59,8 @@ Si tu changes le format des WOD :
 
 ## La sécurité
 
-- **Aucun HTML brut** : `h()` crée les textes par des nœuds texte, jamais par `innerHTML`. Un WOD collé ou une réponse du coach ne peut donc pas injecter de code. Garde cette règle.
+- **Aucun HTML brut** : `h()` crée les textes par des nœuds texte, jamais par `innerHTML`. Un WOD collé, reçu par lien ou proposé par le coach ne peut donc pas injecter de code. Garde cette règle.
+- **Tout ce qui entre est vérifié** : un WOD reçu par lien passe par `src/validate.ts`, comme un WOD collé.
 - **Politique de sécurité du contenu (CSP)** : `vite.config.ts` l'ajoute à la page au build seulement. Elle n'autorise que les fichiers de l'appli et les connexions à `https://api.anthropic.com`. Si tu ajoutes une ressource externe ou un autre service, ajoute-le à la politique, puis vérifie la version construite avec `npm run preview`.
 - **Styles** : les tailles calculées (jauges, graphiques) passent par `el.style`, que `h()` gère pour l'attribut `style`. La CSP refuse les attributs `style` écrits en dur.
 

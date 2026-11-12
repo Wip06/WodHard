@@ -6,7 +6,6 @@ import { distanceText, SPORT_INFO } from '../sports';
 import { dashboard, DEFAULT_RPE, STREAK_MIN, type Dashboard, type Family } from '../stats';
 import { currentRecords, findWod, getPlan, references, sortedActivities, sortedResults } from '../store';
 import { workKey } from '../records';
-import { goalsBlock } from './goals';
 import { liftsBlock } from './lifts';
 import { referencesBlock, referencesSummary } from './references';
 import { openChat, pageHead } from './parts';
@@ -321,7 +320,6 @@ export function progressView(): View {
       'section',
       { class: 'page' },
       head,
-      goalsBlock(),
       h('p', { class: 'empty' }, 'Rien à montrer pour l’instant : fais un WOD ou ajoute une activité, tes progrès apparaîtront ici.'),
     );
     return { el, tab: 'progress' };
@@ -333,7 +331,6 @@ export function progressView(): View {
     'section',
     { class: 'page' },
     head,
-    goalsBlock(),
     weekBlock(d),
     // La période ne change que les encarts à partir de la régularité.
     h(

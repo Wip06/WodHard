@@ -8,9 +8,10 @@ WODHARD est une appli de suivi de WOD pour le CrossFit et l'Hyrox, sur télépho
 
 ## Ce qu'elle fait
 
-- **Programme et chrono** : planifie tes WOD (AMRAP, EMOM, For Time, Hyrox, force, séances en plusieurs blocs) et fais-les avec un chrono qui te guide tour par tour.
-- **Scores et records** : chaque séance est enregistrée avec ton RPE et tes temps par tour, et l'appli suit tes records et tes WOD de référence.
-- **Suivi** : ta semaine, ta régularité, ta charge d'entraînement, tes autres sports et tes objectifs, jusqu'au plan de course d'un Hyrox.
+- **Programme et chrono** : planifie tes WOD (AMRAP, EMOM, For Time, Hyrox, force, séances en plusieurs blocs) et fais-les avec un chrono qui te guide tour par tour. Pioche dans une bibliothèque de classiques (Fran, Cindy, Murph…), et partage un WOD avec un ami par un simple lien.
+- **Scores** : chaque séance est enregistrée avec ton RPE et tes temps par tour, et tes WOD de référence se refont à intervalles réguliers.
+- **Suivi** : ta semaine, ta régularité, ta charge d'entraînement et tes autres sports.
+- **Exploits** : tes objectifs, jusqu'au plan de course d'un Hyrox, et tes records en course, vélo, Hyrox, charges et WOD.
 - **Coach** : il prépare tes séances et tes programmes à partir de ton profil et de ton historique, dans l'appli ou dans ton appli d'IA habituelle.
 
 ## Les principes

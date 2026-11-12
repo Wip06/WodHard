@@ -43,6 +43,7 @@ Tips:
 - **The profile** makes all the difference: the more precise it is, the more the sessions fit you. An example just below.
 - Your key stays on your phone and isn't part of backups. Don't share it: any message sent with it is billed to your account.
 - With each message, your profile and history are sent to Anthropic.
+- **Your spending**: the app estimates what the coach has cost you this month, under "Coach" in the conversation and in its settings. The exact amount is on console.anthropic.com.
 
 #### Example of "Profil et consignes" (Profile and instructions)
 
@@ -63,7 +64,7 @@ Instructions: short and to the point. Explain technical movements in one sentenc
 and give an easier option for each.
 ```
 
-No need to describe the WOD format: the app gives it to the coach. Your goals from **Suivi** (Progress), your history and your program are also sent at each conversation: here, put what the app doesn't know (your gym, your schedule, your aches, the way you like to train…). Your profile changes? Update it in the same settings.
+No need to describe the WOD format: the app gives it to the coach. Your goals (**Exploits** page), your history and your program are also sent at each conversation: here, put what the app doesn't know (your gym, your schedule, your aches, the way you like to train…). Your profile changes? Update it in the same settings.
 
 For option B, this same text goes at the top of your project's instructions, before the coach rules.
 
@@ -99,11 +100,11 @@ With option B, the coach only knows what you paste: copy your history again from
 
 ## 4. First steps
 
-1. **Add your first WOD**: **WOD** tab › **Créer un WOD** (Create a WOD) to enter it by hand, **Coller un WOD** for a coach's reply, or ask the **Coach** tab.
+1. **Add your first WOD**: **WOD** tab › **Créer un WOD** (Create a WOD) to enter it by hand, **Coller un WOD** for a coach's reply, ask the **Coach** tab, or pick a classic (Fran, Cindy, Murph…) from the ☰ menu › **Bibliothèque de WOD** (WOD library).
 2. **Do it**: open the WOD › **Lancer le chrono** (Start the timer). The timer guides you round by round and keeps the screen on when the phone allows it.
 3. **Log your score** at the end, with your **RPE** (rate of perceived exertion, from 1 to 10). The RPE is optional, but it's what computes your training load in Suivi.
 4. **Plan what's next**: on a WOD's page, pick a date › **Planifier** (Schedule). To move or delete several WODs at once: **⋯** button at the top right of the WOD screen.
-5. **Set yourself a goal**: **Suivi** tab › **+ Nouvel objectif** (New goal): a load, a score on a WOD, a Hyrox race, a half marathon… The nearest one shows at the top of the WOD screen.
+5. **Set yourself a goal**: ☰ menu › **Exploits** (Achievements) › **+ Nouvel objectif** (New goal): a load, a score on a WOD, a Hyrox race, a half marathon… The nearest one shows at the top of the WOD screen.
 6. **Log your other sports** (running, cycling, swimming…): **Suivi** tab › **+ Ajouter une activité** (Add an activity). The coach takes them into account.
 
 ## 5. Finding your way
@@ -112,13 +113,15 @@ With option B, the coach only knows what you paste: copy your history again from
 |---|---|
 | **WOD** | Your program, the WODs to do, Coller / Créer un WOD (Paste / Create a WOD), and the ⋯ button to reschedule, unplan or delete several WODs. |
 | **Coach** | The conversation with the coach. |
-| **Suivi** (Progress) | Your goals, your week, your consistency, your training load, your records… |
-| **☰** | Chrono libre (Free timer), Toutes mes séances (All my sessions, your whole history), Réglages (Settings: coach, backup, import). |
+| **Suivi** (Progress) | Your week, your consistency, your training load, your workout mix, your other sports… |
+| **☰** | Chrono libre (Free timer), Toutes mes séances (All my sessions, your whole history), Exploits (Achievements: your goals and records), Bibliothèque de WOD (WOD library: the classics), Réglages (Settings: coach, backup, import). |
 
 ## 6. Good to know
 
 - **Offline**: once installed, the app works offline. Only option A's coach needs the internet.
-- **Benchmark WODs** (Fran, Cindy, a home-made test…): on the WOD's page, **En faire un WOD de référence** (Make it a benchmark WOD). The app reminds you to redo it and draws your progress chart.
+- **Benchmark WODs** (Fran, Cindy, a home-made test…): on the WOD's page, **⋯** button at the top right › **En faire un WOD de référence** (Make it a benchmark WOD). The app reminds you to redo it and draws your progress chart.
 - **Redo a WOD you've already done**: ☰ menu › **Toutes mes séances**, open the session › **Refaire ce WOD** (Redo this WOD). The search on the WOD screen finds it too.
 - **Strava**: from a session › **Récapitulatif** (Recap), save the image to your photos and add it to your Strava activity.
+- **Your records** (5 km, 10 km, bike ride, Hyrox stations, loads, repeated WODs…): ☰ menu › **Exploits**. Tap a record to open the session it comes from. You'll also find your predicted race times and your ideal Hyrox, and your milestones (sessions, kilometers, hours, tonnage), this year or since the start. A record beaten in the last 30 days gets a **Nouveau** (New) badge.
+- **Share a WOD**: on its page, **⋯** button › **Partager ce WOD** (Share this WOD) sends a link. The same menu lets you edit, duplicate or delete the WOD, or set a goal on it. Your friend opens it and adds the WOD in one tap. If they use the installed app on an iPhone, they copy the link and paste it into **Coller un WOD**.
 - **Timer without a WOD** (warm-up, Tabata, rest…): ☰ menu › **Chrono libre**.

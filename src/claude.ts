@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { APIError } from '@anthropic-ai/sdk';
 import coachFormat from '../documentations/fr/regles-du-coach.md?raw';
+import { today } from './format';
 import { isObj } from './validate';
 
 /**
@@ -9,23 +10,48 @@ import { isObj } from './validate';
  */
 
 const SETTINGS_KEY = 'wodhard:coach';
+/** Dépense estimée du mois en cours, sur cet appareil. */
+const USAGE_KEY = 'wodhard:coach-usage';
 /** Plafond de la réponse, réflexion comprise. La réponse arrive en continu, sans risque de délai dépassé. */
 const MAX_TOKENS = 32_000;
 const TIMEOUT_MS = 180_000;
 /** Profondeur de réflexion : assez pour un programme cohérent, sans faire durer une simple question. */
 const EFFORT = 'medium';
 
+/** Tarif d'un modèle, en dollars par million de tokens. Le cache écrit coûte 1,25 fois l'entrée. */
+export interface Price {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
 export interface CoachModel {
   id: string;
   label: string;
   note: string;
+  /** Pour estimer la dépense : la facture exacte reste celle de console.anthropic.com. */
+  price: Price;
 }
+
+const OPUS_PRICE: Price = { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 };
 
 /** Modèles proposés, du plus capable au plus économique. */
 export const MODELS: CoachModel[] = [
-  { id: 'claude-opus-5-5', label: 'Opus 5.5', note: 'Le plus capable : le meilleur pour tes programmes.' },
-  { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', note: 'Plus rapide, environ deux fois moins cher qu’Opus.' },
-  { id: 'claude-haiku-5-5', label: 'Haiku 5.5', note: 'Très rapide et très économique, pour des questions simples.' },
+  { id: 'claude-opus-5-5', label: 'Opus 5.5', note: 'Le plus capable : le meilleur pour tes programmes.', price: OPUS_PRICE },
+  {
+    id: 'claude-sonnet-5-5',
+    label: 'Sonnet 5.5',
+    note: 'Plus rapide, environ deux fois moins cher qu’Opus.',
+    price: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+  },
+  {
+    id: 'claude-haiku-5-5',
+    label: 'Haiku 5.5',
+    note: 'Très rapide et très économique, pour des questions simples.',
+    // Cache lu : tarif non publié ici, estimé à 10 % de l'entrée, plutôt au-dessus.
+    price: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
+  },
 ];
 export const DEFAULT_MODEL = 'claude-opus-5-5';
 
@@ -114,6 +140,62 @@ export function saveCoach(settings: CoachSettings | null): void {
 export const coachReady = (settings: CoachSettings) => settings.key.trim() !== '' && settings.model !== '';
 
 export const modelLabel = (id: string) => MODELS.find((model) => model.id === id)?.label ?? id;
+
+/** Tokens d'une réponse, tels que l'API les compte (réflexion comprise dans la sortie). */
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+}
+
+/**
+ * Coût estimé d'une réponse, en dollars, au tarif du modèle qui a répondu. Un modèle de repli
+ * inconnu de l'appli est compté au tarif du modèle choisi.
+ */
+export function replyCost(model: string, usage: TokenUsage, chosen: string = DEFAULT_MODEL): number {
+  const price = (MODELS.find((candidate) => candidate.id === model) ?? MODELS.find((candidate) => candidate.id === chosen))?.price ?? OPUS_PRICE;
+  return (
+    (usage.input_tokens * price.input +
+      usage.output_tokens * price.output +
+      (usage.cache_read_input_tokens ?? 0) * price.cacheRead +
+      (usage.cache_creation_input_tokens ?? 0) * price.cacheWrite) /
+    1_000_000
+  );
+}
+
+export interface CoachUsage {
+  /** AAAA-MM */
+  month: string;
+  usd: number;
+  replies: number;
+}
+
+/** Dépense estimée du mois (le mois en cours par défaut) : elle repart de zéro chaque mois. */
+export function coachUsage(month = today().slice(0, 7)): CoachUsage {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(USAGE_KEY) ?? 'null');
+    if (isObj(raw) && raw.month === month && typeof raw.usd === 'number' && typeof raw.replies === 'number') {
+      return { month, usd: raw.usd, replies: raw.replies };
+    }
+  } catch {
+    // Estimation illisible : elle repart de zéro.
+  }
+  return { month, usd: 0, replies: 0 };
+}
+
+function recordUsage(cost: number): void {
+  const current = coachUsage();
+  try {
+    localStorage.setItem(USAGE_KEY, JSON.stringify({ ...current, usd: current.usd + cost, replies: current.replies + 1 }));
+  } catch {
+    // Stockage plein ou bloqué : l'estimation n'est simplement pas mise à jour.
+  }
+}
+
+/** « ≈ 0,42 $ », ou « < 0,01 $ » pour quelques questions. */
+export const usdText = (usd: number) =>
+  usd > 0 && usd < 0.01 ? '< 0,01 $' : `≈ ${usd.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
 
 type Sdk = typeof import('@anthropic-ai/sdk');
 let sdk: Promise<Sdk> | undefined;
@@ -227,6 +309,8 @@ export async function generate(settings: CoachSettings, turns: Turn[], options: 
   } catch (error) {
     throw coachError(error, mod);
   }
+  // Toute réponse reçue est facturée, même déclinée ou vide.
+  recordUsage(replyCost(message.model, message.usage, settings.model));
   if (message.stop_reason === 'refusal') {
     throw new CoachError('Le coach a décliné cette demande : reformule-la autrement.');
   }

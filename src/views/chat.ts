@@ -6,10 +6,12 @@ import {
   COACH_FORMAT,
   CoachError,
   coachReady,
+  coachUsage,
   correctionRequest,
   generate,
   loadCoach,
   modelLabel,
+  usdText,
   type Turn,
 } from '../claude';
 import { navigate, type View } from '../router';
@@ -445,6 +447,13 @@ export function chatView(): View {
     '↑',
   );
   const scrollToEnd = () => window.scrollTo({ top: document.documentElement.scrollHeight });
+  /** Sous le titre : le modèle, et la dépense estimée du mois dès la première réponse. */
+  const subtitle = h('span');
+  const showCost = () => {
+    const usage = coachUsage();
+    subtitle.textContent = usage.replies > 0 ? `${modelLabel(coach.model)} · ce mois ${usdText(usage.usd)}` : modelLabel(coach.model);
+  };
+  showCost();
   /** Espace réservé sous la dernière question, pour que la réponse s'y écrive sans faire défiler l'écran. */
   let lastTurn: HTMLElement | null = null;
   /**
@@ -530,6 +539,8 @@ export function chatView(): View {
       scrollToEnd();
     } finally {
       sendBtn.disabled = false;
+      // Une réponse reçue, même en erreur ensuite, a été facturée.
+      showCost();
     }
   }
 
@@ -563,7 +574,7 @@ export function chatView(): View {
     h(
       'header',
       { class: 'chat-head' },
-      h('div', { class: 'chat-title' }, h('strong', null, 'Coach'), h('span', null, modelLabel(coach.model))),
+      h('div', { class: 'chat-title' }, h('strong', null, 'Coach'), subtitle),
       h('button', { class: 'icon-btn', 'aria-label': 'Nouvelle conversation', onclick: () => void reset() }, '✎'),
       h('a', { class: 'icon-btn', href: '#/coach', 'aria-label': 'Réglages du coach' }, '⚙'),
     ),
