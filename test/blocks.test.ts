@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { scoreLine, wodSummary } from './format';
-import { liftsOf, recordsBeaten } from './lifts';
-import { allMovements, normalizeWod } from './movements';
-import { beyondPrescribed, recordIds, workKey } from './records';
-import { sessionCard } from './sessionCard';
-import { resultDuration, scoreHeadline } from './stats';
-import type { AmrapWod, Result, SessionScore, SessionWod, StrengthWod } from './types';
-import { validateScore, validateWod } from './validate';
+import { scoreLine, wodSummary } from '../src/format';
+import { liftsOf, recordsBeaten } from '../src/lifts';
+import { allMovements, normalizeWod } from '../src/movements';
+import { beyondPrescribed, recordIds, workKey } from '../src/records';
+import { sessionCard } from '../src/sessionCard';
+import { resultDuration, scoreHeadline } from '../src/stats';
+import type { AmrapWod, Result, SessionScore, SessionWod, StrengthWod } from '../src/types';
+import { validateScore, validateWod } from '../src/validate';
 
 const force: StrengthWod = {
   schema_version: 1,

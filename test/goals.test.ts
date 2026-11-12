@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { deadlineText, goalStatus, goalSummary, goalTitle, newlyAchieved, sortGoals } from './goals';
-import type { AmrapWod, ForTimeWod, Goal, LiftGoal, Result, StrengthWod } from './types';
-import { validateBackup, validateGoal } from './validate';
+import { deadlineText, goalStatus, goalSummary, goalTitle, newlyAchieved, sortGoals } from '../src/goals';
+import type { AmrapWod, ForTimeWod, Goal, LiftGoal, Result, StrengthWod } from '../src/types';
+import { validateBackup, validateGoal } from '../src/validate';
 
 const squat: StrengthWod = { schema_version: 1, type: 'strength', title: 'Squat', exercises: [{ name: 'Back squat', sets: 3, reps: 5, load_kg: 100 }] };
 const fran: ForTimeWod = { schema_version: 1, type: 'for_time', title: 'Fran', time_cap_sec: 600, rounds: 3, rep_scheme: [21, 15, 9], movements: [{ name: 'Thruster', load_kg: 43 }, { name: 'Pull-up' }] };

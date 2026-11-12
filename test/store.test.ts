@@ -23,8 +23,8 @@ import {
   setReference,
   setSession,
   visiblePlan,
-} from './store';
-import type { AmrapWod, SessionWod } from './types';
+} from '../src/store';
+import type { AmrapWod, SessionWod } from '../src/types';
 
 // Stockage en mémoire : le store n'y touche qu'à l'enregistrement.
 const memory = new Map<string, string>();

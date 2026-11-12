@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { dashboard, familyOf, resultDuration, sessionLoad, type DashboardInput } from './stats';
-import type { Activity, AmrapWod, EmomWod, ForTimeWod, HyroxWod, Result, Score, Wod } from './types';
+import { dashboard, familyOf, resultDuration, sessionLoad, type DashboardInput } from '../src/stats';
+import type { Activity, AmrapWod, EmomWod, ForTimeWod, HyroxWod, Result, Score, Wod } from '../src/types';
 
 const fran: ForTimeWod = {
   schema_version: 1,

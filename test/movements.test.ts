@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { aliasConflicts, allMovements, canonicalEquipment, canonicalName, isRest, knownNames, normalizeWod } from './movements';
-import type { EmomWod, HyroxWod } from './types';
+import { aliasConflicts, allMovements, canonicalEquipment, canonicalName, isRest, knownNames, normalizeWod } from '../src/movements';
+import type { EmomWod, HyroxWod } from '../src/types';
 
 const hyrox: HyroxWod = {
   schema_version: 1,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { sessionCard, sessionFileName } from './sessionCard';
-import type { AmrapWod, EmomWod, ForTimeWod, HyroxWod, Result, Score, Wod } from './types';
+import { sessionCard, sessionFileName } from '../src/sessionCard';
+import type { AmrapWod, EmomWod, ForTimeWod, HyroxWod, Result, Score, Wod } from '../src/types';
 
 const cindy: AmrapWod = {
   schema_version: 1,

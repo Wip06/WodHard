@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { compareScores, isOverCap, lastSplits, recordIds, repsInRounds, repsPerRound, scoreDelta, splitDeltas, workKey } from './records';
-import type { AmrapWod, ForTimeWod, HyroxWod, Result, Score } from './types';
+import { compareScores, isOverCap, lastSplits, recordIds, repsInRounds, repsPerRound, scoreDelta, splitDeltas, workKey } from '../src/records';
+import type { AmrapWod, ForTimeWod, HyroxWod, Result, Score } from '../src/types';
 
 const fran: ForTimeWod = {
   schema_version: 1,

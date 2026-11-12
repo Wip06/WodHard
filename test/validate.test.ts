@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import instructions from '../docs/instructions-projet-claude.md?raw';
-import type { Wod } from './types';
-import { parseImport, parseWod, validateBackup, validateScore, validateWod } from './validate';
+import coachRulesEn from '../documentations/en/coach-rules.md?raw';
+import type { Wod } from '../src/types';
+import { parseImport, parseWod, validateBackup, validateScore, validateWod } from '../src/validate';
 
-// Les exemples donnés dans les instructions du projet Claude.
+// Les exemples donnés dans les règles du coach.
 const cindy = {
   schema_version: 1,
   type: 'amrap',
@@ -370,9 +370,9 @@ describe('validateBackup', () => {
   });
 });
 
-describe('instructions du projet Claude', () => {
+describe('règles du coach en anglais', () => {
   it('ne donnent que des exemples acceptés par l’application', () => {
-    const blocks = [...instructions.matchAll(/```json\n([\s\S]*?)```/g)].map((match) => match[1] ?? '');
+    const blocks = [...coachRulesEn.matchAll(/```json\n([\s\S]*?)```/g)].map((match) => match[1] ?? '');
     expect(blocks).toHaveLength(9);
     for (const block of blocks) expect(parseImport(block)).toMatchObject({ ok: true });
   });

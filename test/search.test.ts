@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { matchesQuery, searchText } from './search';
-import type { Wod } from './types';
+import { matchesQuery, searchText } from '../src/search';
+import type { Wod } from '../src/types';
 
 const fran: Wod = {
   schema_version: 1,

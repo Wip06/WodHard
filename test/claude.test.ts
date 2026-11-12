@@ -11,8 +11,8 @@ import {
   loadCoach,
   replyText,
   type CoachSettings,
-} from './claude';
-import { parseImport } from './validate';
+} from '../src/claude';
+import { parseImport } from '../src/validate';
 
 const memory = new Map<string, string>();
 vi.stubGlobal('localStorage', {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { agoText, referenceOf } from './references';
-import type { ForTimeWod, Result, SavedWod } from './types';
-import { validateBackup } from './validate';
+import { agoText, referenceOf } from '../src/references';
+import type { ForTimeWod, Result, SavedWod } from '../src/types';
+import { validateBackup } from '../src/validate';
 
 const fran: ForTimeWod = {
   schema_version: 1,

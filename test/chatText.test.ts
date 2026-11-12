@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { demoUrl, inline, parseReply, preview } from './chatText';
+import { demoUrl, inline, parseReply, preview } from '../src/chatText';
 
 describe('réponses du coach', () => {
   it('découpe paragraphes, listes à puces et listes numérotées', () => {

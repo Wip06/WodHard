@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONFIG, freeClock, freeCues, freeFrame, freeTotalMs, type FreeConfig } from './freeTimer';
-import { COUNTDOWN_MS, elapsedMs } from './timer';
+import { DEFAULT_CONFIG, freeClock, freeCues, freeFrame, freeTotalMs, type FreeConfig } from '../src/freeTimer';
+import { COUNTDOWN_MS, elapsedMs } from '../src/timer';
 
 const tabata: FreeConfig = { ...DEFAULT_CONFIG, mode: 'intervals', workSec: 20, restSec: 10, rounds: 8 };
 const emom: FreeConfig = { ...DEFAULT_CONFIG, mode: 'intervals', workSec: 60, restSec: 0, rounds: 3 };

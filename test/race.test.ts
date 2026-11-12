@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { clock } from './format';
-import { goalStatus, goalSummary } from './goals';
-import { isFullRace, nextHyrox, predictTime, raceDetails, raceName, racePace, racePlan, raceSegments, raceTargets, segmentTargets } from './race';
-import type { Activity, EnduranceRace, Goal, HyroxRace, HyroxWod, Result } from './types';
-import { validateGoal } from './validate';
+import { clock } from '../src/format';
+import { goalStatus, goalSummary } from '../src/goals';
+import { isFullRace, nextHyrox, predictTime, raceDetails, raceName, racePace, racePlan, raceSegments, raceTargets, segmentTargets } from '../src/race';
+import type { Activity, EnduranceRace, Goal, HyroxRace, HyroxWod, Result } from '../src/types';
+import { validateGoal } from '../src/validate';
 
 const race: HyroxRace = { id: 'paris', kind: 'race', race: 'hyrox', created: '2026-10-01', date: '2027-03-14', name: 'Hyrox Paris', division: 'open_men', target_sec: 5400 };
 const full: HyroxWod = { schema_version: 1, type: 'hyrox', title: 'Simulation', segments: raceSegments() };

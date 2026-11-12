@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { COUNTDOWN_MS, cuesBetween, elapsedMs, frame, newClock, pause, resume, splitsFromMarks } from './timer';
-import type { AmrapWod, EmomWod, ForTimeWod, HyroxWod } from './types';
+import { COUNTDOWN_MS, cuesBetween, elapsedMs, frame, newClock, pause, resume, splitsFromMarks } from '../src/timer';
+import type { AmrapWod, EmomWod, ForTimeWod, HyroxWod } from '../src/types';
 
 const amrap: AmrapWod = {
   schema_version: 1,

@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { APIError } from '@anthropic-ai/sdk';
-import coachFormat from './coach-format.md?raw';
+import coachFormat from '../documentations/fr/regles-du-coach.md?raw';
 import { isObj } from './validate';
 
 /**
