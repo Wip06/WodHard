@@ -4,7 +4,7 @@ Ton carnet de WOD sur téléphone : ton programme, le chrono, tes scores, ta pro
 
 ## 1. Ouvrir et installer l'appli
 
-Ouvre ce lien sur ton téléphone : **https://wip06.github.io/WODHARD/**
+Ouvre ce lien sur ton téléphone : **https://wip06.github.io/WodHard/**
 
 Puis installe-la sur ton écran d'accueil :
 
