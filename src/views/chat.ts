@@ -432,7 +432,18 @@ export function chatView(): View {
   const thread = h('div', { class: 'chat', 'aria-live': 'polite' });
   const errorBox = h('div', { class: 'errors chat-error', role: 'alert', hidden: true });
   const input = h('textarea', { rows: 1, 'aria-label': 'Ton message', placeholder: 'Écris au coach…' });
-  const sendBtn = h('button', { type: 'submit', class: 'send', 'aria-label': 'Envoyer' }, '↑');
+  const sendBtn = h(
+    'button',
+    {
+      type: 'submit',
+      class: 'send',
+      'aria-label': 'Envoyer',
+      // Garde le focus dans le champ : sinon la barre du bas réapparaît, la saisie remonte sous le
+      // doigt et le clic tombe à côté du bouton. Le clavier reste ouvert, comme dans une messagerie.
+      onmousedown: (event: Event) => event.preventDefault(),
+    },
+    '↑',
+  );
   const scrollToEnd = () => window.scrollTo({ top: document.documentElement.scrollHeight });
   /** Espace réservé sous la dernière question, pour que la réponse s'y écrive sans faire défiler l'écran. */
   let lastTurn: HTMLElement | null = null;

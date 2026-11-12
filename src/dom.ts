@@ -13,6 +13,8 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   const el = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs ?? {})) {
     if (typeof value === 'function') el.addEventListener(key.replace(/^on/, ''), value);
+    // Par l'objet style, pas par l'attribut : la CSP de l'appli refuse les attributs style.
+    else if (key === 'style' && typeof value === 'string') el.style.cssText = value;
     else if (value === true) el.setAttribute(key, '');
     else if (value !== false && value != null) el.setAttribute(key, String(value));
   }
