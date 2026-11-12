@@ -12,7 +12,8 @@ import { activityRow, askAdvice, deltaChip, pageHead, resultRow, rxChip, splitsL
 
 /**
  * Toutes les séances, WOD et autres sports, de la plus récente à la plus ancienne. On y retrouve
- * aussi celles d'un WOD supprimé de la bibliothèque.
+ * aussi celles d'un WOD supprimé de la bibliothèque, et les WOD déjà faits, à refaire depuis leur
+ * séance. Seul accès : le menu ☰.
  */
 export function historyView(): View {
   const records = currentRecords();
@@ -23,7 +24,7 @@ export function historyView(): View {
   const el = h(
     'section',
     { class: 'page' },
-    pageHead('Toutes mes séances', { href: '#/data', label: 'Données' }),
+    pageHead('Toutes mes séances'),
     rows.length > 0
       ? h(
           'ul',
@@ -32,7 +33,7 @@ export function historyView(): View {
         )
       : h('p', { class: 'empty' }, 'Aucune séance pour l’instant. Lance un WOD et saisis ton score : elle apparaîtra ici.'),
   );
-  return { el, tab: 'data' };
+  return { el, tab: 'menu' };
 }
 
 export function resultView(id: string): View | null {
@@ -65,7 +66,7 @@ export function resultView(id: string): View | null {
     'section',
     { class: 'page' },
     // Retour à la fiche du WOD ; sans elle (WOD supprimé), à la liste de toutes les séances.
-    pageHead(dateLabel(result.date), inLibrary ? { href: `#/wod/${result.wod_id}`, label: 'WOD' } : { href: '#/history', label: 'Mes séances' }),
+    pageHead(dateLabel(result.date), inLibrary ? { href: `#/wod/${result.wod_id}`, label: 'WOD' } : { href: '#/history', label: 'Toutes mes séances' }),
     h(
       'div',
       { class: 'scoreboard' },

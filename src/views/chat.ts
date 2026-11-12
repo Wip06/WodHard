@@ -412,20 +412,20 @@ export function chatView(): View {
     const el = h(
       'section',
       { class: 'page' },
-      pageHead('Demander au coach', { href: '#/', label: 'WOD' }),
+      pageHead('Coach'),
       h(
         'div',
         { class: 'notice' },
-        h('p', null, 'Configure le coach Claude pour lui demander tes séances et lui poser tes questions, sans quitter l’appli.'),
-        h('a', { class: 'btn block', href: '#/coach' }, 'Configurer le coach Claude'),
+        h('p', null, 'Configure le coach pour lui demander tes séances et lui poser tes questions, sans quitter l’appli.'),
+        h('a', { class: 'btn block', href: '#/coach' }, 'Configurer le coach'),
       ),
       h(
         'p',
         { class: 'hint left' },
-        'Tu passes par Claude ? Copie ton historique depuis l’onglet Données, colle-le dans ton projet, puis rapporte sa réponse avec « Coller un WOD ».',
+        'Tu utilises un coach dans une autre appli ? Copie ton historique depuis Réglages (menu ☰), colle-le dans sa conversation, puis rapporte sa réponse avec « Coller un WOD ».',
       ),
     );
-    return { el, tab: 'wods' };
+    return { el, tab: 'coach' };
   }
 
   let messages = loadChat();
@@ -444,7 +444,9 @@ export function chatView(): View {
   const makeRoom = (asked: HTMLElement, turn: HTMLElement) => {
     const header = document.querySelector('.chat-head')?.getBoundingClientRect().height ?? 0;
     const composer = document.querySelector('.composer')?.getBoundingClientRect().height ?? 0;
-    turn.style.minHeight = `${Math.max(0, window.innerHeight - header - composer - asked.offsetHeight - 40)}px`;
+    // La barre du bas compte quand elle est affichée ; masquée pendant la saisie, elle mesure 0.
+    const tabs = document.querySelector('.tabs')?.getBoundingClientRect().height ?? 0;
+    turn.style.minHeight = `${Math.max(0, window.innerHeight - header - composer - tabs - asked.offsetHeight - 40)}px`;
     const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     window.scrollTo({ top: Math.max(0, asked.getBoundingClientRect().top + window.scrollY - header - 12), behavior: smooth ? 'smooth' : 'auto' });
   };
@@ -550,7 +552,6 @@ export function chatView(): View {
     h(
       'header',
       { class: 'chat-head' },
-      h('a', { class: 'icon-btn', href: '#/', 'aria-label': 'Retour' }, '‹'),
       h('div', { class: 'chat-title' }, h('strong', null, 'Coach'), h('span', null, modelLabel(coach.model))),
       h('button', { class: 'icon-btn', 'aria-label': 'Nouvelle conversation', onclick: () => void reset() }, '✎'),
       h('a', { class: 'icon-btn', href: '#/coach', 'aria-label': 'Réglages du coach' }, '⚙'),
@@ -569,7 +570,7 @@ export function chatView(): View {
       input,
       sendBtn,
     ),
-    h('p', { class: 'chat-privacy' }, 'Tes messages, ton profil et ton historique sont envoyés à Anthropic (Claude).'),
+    h('p', { class: 'chat-privacy' }, 'Tes messages, ton profil et ton historique sont envoyés à Anthropic.'),
   );
 
   // Ouvre la conversation sur le dernier message, et sur le champ quand un message est préparé.
@@ -578,5 +579,5 @@ export function chatView(): View {
     grow();
     if (draft) input.focus();
   });
-  return { el };
+  return { el, tab: 'coach' };
 }

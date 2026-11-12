@@ -55,7 +55,8 @@ function weekBlock(d: Dashboard): HTMLElement {
             h('span', { class: 'meter' }, h('span', { style: `width: ${Math.round((week.plannedDone / week.planned) * 100)}%` })),
           ),
       ),
-      h('div', { class: 'stat' }, h('strong', null, week.effortSec > 0 ? duration(week.effortSec) : '0'), h('span', null, 'd’effort')),
+      // À la minute près : « 45 min 04 » ne tient pas dans un tiers d'écran.
+      h('div', { class: 'stat' }, h('strong', null, week.effortSec > 0 ? duration(Math.max(1, Math.round(week.effortSec / 60)) * 60) : '0'), h('span', null, 'd’effort')),
       h('div', { class: 'stat' }, h('strong', null, week.rpe === undefined ? '—' : decimal(week.rpe, 1)), h('span', null, 'RPE moyen')),
     ),
     week.streak > 0 &&
@@ -311,7 +312,7 @@ export function progressView(): View {
   const activities = sortedActivities();
   const addButton = h('a', { class: 'btn primary block', href: '#/activity/new' }, '+ Ajouter une activité');
   const head = [
-    pageHead('Progrès'),
+    pageHead('Suivi'),
     h('p', { class: 'lead' }, 'Course, vélo, natation… : ajoute tes autres séances pour tout suivre ici.'),
     addButton,
   ];
@@ -332,6 +333,9 @@ export function progressView(): View {
     'section',
     { class: 'page' },
     head,
+    goalsBlock(),
+    weekBlock(d),
+    // La période ne change que les encarts à partir de la régularité.
     h(
       'div',
       { class: 'segmented', role: 'group', 'aria-label': 'Période' },
@@ -351,8 +355,6 @@ export function progressView(): View {
         ),
       ),
     ),
-    goalsBlock(),
-    weekBlock(d),
     heatmapBlock(d),
     loadBlock(d),
     mixBlock(d),
@@ -364,7 +366,6 @@ export function progressView(): View {
     recordsBlock(d),
     coachReady(loadCoach()) &&
       h('button', { class: 'btn block', onclick: () => openChat(summary(d, period?.since ?? '')) }, 'Demander l’analyse au coach'),
-    h('a', { class: 'btn ghost block', href: '#/history' }, 'Toutes mes séances'),
   );
   return { el, tab: 'progress' };
 }

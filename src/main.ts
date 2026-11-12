@@ -7,7 +7,7 @@ import { nextBlockView } from './views/blocks';
 import { chronoRunView, chronoView } from './views/chrono';
 import { chatView, proposalView } from './views/chat';
 import { coachView } from './views/coach';
-import { dataView } from './views/data';
+import { settingsView } from './views/data';
 import { editorView, sessionEditorView } from './views/editor';
 import { goalFormView, goalView } from './views/goals';
 import { historyView, recapView, resultView } from './views/history';
@@ -36,7 +36,15 @@ const routes: [RegExp, (...params: string[]) => View | null][] = [
   [/^\/history$/, historyView],
   [/^\/history\/([\w-]+)$/, resultView],
   [/^\/history\/([\w-]+)\/recap$/, recapView],
-  [/^\/data$/, dataView],
+  [/^\/settings$/, settingsView],
+  // Ancienne adresse de Données, rangée dans les Réglages : un lien enregistré y mène toujours.
+  [
+    /^\/data$/,
+    () => {
+      history.replaceState(null, '', '#/settings');
+      return settingsView();
+    },
+  ],
   [/^\/progress$/, progressView],
   [/^\/lifts$/, liftsView],
   [/^\/lift\/([^/]+)$/, liftView],

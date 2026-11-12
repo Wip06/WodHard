@@ -50,7 +50,7 @@ function goalRow(status: GoalStatus): HTMLElement {
   );
 }
 
-/** Bloc « Objectifs » de l'onglet Progrès : en cours, puis atteints récemment, puis les plus anciens repliés. */
+/** Bloc « Objectifs » de l'onglet Suivi : en cours, puis atteints récemment, puis les plus anciens repliés. */
 export function goalsBlock(): HTMLElement {
   const statuses = goalStatuses();
   const since = new Date(Date.now() - RECENT_DAYS * 86_400_000).toISOString().slice(0, 10);
@@ -100,15 +100,30 @@ function goalBanner(status: GoalStatus): HTMLElement {
   );
 }
 
+/** Liste des autres objectifs de l'écran WOD dépliée : gardé le temps de la session. */
+let othersOpen = false;
+
 /**
- * Objectifs en cours, en tête de l'écran WOD, par échéance. Les objectifs atteints restent dans
- * l'onglet Progrès ; une course passée sans être atteinte n'y figure plus.
+ * Objectifs en cours, en tête de l'écran WOD : le plus proche en entier, les autres dans une liste
+ * à déplier, par échéance. Les objectifs atteints restent dans l'onglet Suivi ; une course passée
+ * sans être atteinte n'y figure plus.
  */
 export function goalBanners(): HTMLElement | false {
   const now = today();
   const statuses = goalStatuses().filter((status) => !status.achievedOn && !(status.goal.kind === 'race' && status.goal.date < now));
   if (statuses.length === 0) return false;
-  return h('ul', { class: 'goal-banners', 'aria-label': 'Objectifs en cours' }, statuses.map((status) => h('li', null, goalBanner(status))));
+  // Par échéance : un objectif en retard passe devant, ceux sans échéance viennent en dernier.
+  const [nearest, ...others] = statuses as [GoalStatus, ...GoalStatus[]];
+  const list =
+    others.length > 0 &&
+    h(
+      'details',
+      { class: 'goal-others', open: othersOpen },
+      h('summary', null, others.length === 1 ? '+ 1 autre objectif' : `+ ${others.length} autres objectifs`),
+      h('ul', { class: 'goal-others-list' }, others.map((status) => h('li', null, goalBanner(status)))),
+    );
+  if (list) list.addEventListener('toggle', () => (othersOpen = list.open));
+  return h('div', { class: 'goal-banners', role: 'group', 'aria-label': 'Objectifs en cours' }, goalBanner(nearest), list);
 }
 
 /** Objectifs en cours sur un entraînement ou un exercice, pour les fiches d'un WOD et d'un exercice. */
@@ -235,7 +250,7 @@ export function goalView(id: string): View | null {
   const el = h(
     'section',
     { class: 'page' },
-    pageHead(status.title, { href: '#/progress', label: 'Progrès' }),
+    pageHead(status.title, { href: '#/progress', label: 'Suivi' }),
     h(
       'div',
       { class: `scoreboard goal ${status.achievedOn ? 'achieved' : ''}` },
@@ -575,7 +590,7 @@ export function goalFormView(id?: string, preset?: string): View | null {
   const el = h(
     'section',
     { class: 'page' },
-    pageHead(editing ? 'Modifier l’objectif' : 'Nouvel objectif', { href: back, label: editing ? 'Objectif' : 'Progrès' }),
+    pageHead(editing ? 'Modifier l’objectif' : 'Nouvel objectif', { href: back, label: editing ? 'Objectif' : 'Suivi' }),
     h(
       'form',
       { class: 'form', novalidate: true, onsubmit: submit },

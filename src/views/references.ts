@@ -121,7 +121,7 @@ export function referenceSection(saved: SavedWod, onChange: () => void): HTMLEle
   );
 }
 
-/** Ligne d'une référence dans l'onglet Progrès : courbe, dernier score, record, prochain test. */
+/** Ligne d'une référence dans l'onglet Suivi : courbe, dernier score, record, prochain test. */
 function referenceRow(reference: Reference): HTMLElement {
   const { saved, results, last, best } = reference;
   const values = results.slice(-10).map((result) => performance(result.wod, result.score));
@@ -149,7 +149,7 @@ function referenceRow(reference: Reference): HTMLElement {
   );
 }
 
-/** Bloc « Tes références » de l'onglet Progrès, celles à refaire en premier. */
+/** Bloc « Tes références » de l'onglet Suivi, celles à refaire en premier. */
 export function referencesBlock(): HTMLElement | false {
   const list = references().sort((a, b) => Number(b.due) - Number(a.due) || (a.dueOn ?? '').localeCompare(b.dueOn ?? ''));
   if (list.length === 0) return false;

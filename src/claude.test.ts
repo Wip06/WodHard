@@ -135,7 +135,7 @@ describe('génération', () => {
 
   it('prévient quand Claude décline la demande', async () => {
     const { impl } = fakeFetch(textStream([], 'refusal'));
-    await expect(generate(settings, [{ role: 'user', text: '…' }], { fetch: impl })).rejects.toThrow('Claude a décliné cette demande');
+    await expect(generate(settings, [{ role: 'user', text: '…' }], { fetch: impl })).rejects.toThrow('Le coach a décliné cette demande');
   });
 
   it('traduit les erreurs de l’API', async () => {
@@ -157,7 +157,7 @@ describe('génération', () => {
 
   it('vérifie la clé sur le modèle choisi par un comptage de tokens, sans générer de texte', async () => {
     const { impl, calls } = fakeFetch(new Response(JSON.stringify({ input_tokens: 8 }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    expect(await checkKey('sk-ant-test', 'claude-opus-5-5', impl)).toBe('Claude Opus 5.5');
+    expect(await checkKey('sk-ant-test', 'claude-opus-5-5', impl)).toBe('Opus 5.5');
     expect(calls[0]?.url).toContain('/v1/messages/count_tokens');
     expect(calls[0]?.body).toMatchObject({ model: 'claude-opus-5-5' });
     const refused = fakeFetch(apiError(401, 'authentication_error', 'invalid x-api-key'));

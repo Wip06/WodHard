@@ -65,6 +65,11 @@ export interface Choice<T> {
   label: string;
   value: T;
   kind?: 'primary' | 'danger';
+  /**
+   * Lancée sur le toucher même, avant la fermeture. Safari n'ouvre le sélecteur de fichiers et ne
+   * lit le presse-papiers que dans un toucher : après la promesse, il serait trop tard.
+   */
+  run?: () => void;
 }
 
 /** Boîte de dialogue modale. Renvoie null si elle est fermée sans choix (Échap, clic à côté). */
@@ -83,7 +88,17 @@ export function choose<T>(title: string, message: string, choices: Choice<T>[]):
         'div',
         { class: 'dialog-actions' },
         choices.map((choice) =>
-          h('button', { class: `btn block ${choice.kind ?? ''}`, onclick: () => close(choice.value) }, choice.label),
+          h(
+            'button',
+            {
+              class: `btn block ${choice.kind ?? ''}`,
+              onclick: () => {
+                choice.run?.();
+                close(choice.value);
+              },
+            },
+            choice.label,
+          ),
         ),
       ),
     );

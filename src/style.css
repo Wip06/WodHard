@@ -180,15 +180,6 @@ a {
   font-size: 1.05rem;
 }
 
-.done-section > summary {
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.done-section[open] > summary {
-  margin-bottom: 12px;
-}
-
 /* Boutons */
 
 .btn {
@@ -218,6 +209,14 @@ a {
 
 .btn.block {
   width: 100%;
+}
+
+/* Petit téléphone (iPhone SE…) : les libellés des boutons côte à côte tiennent sur une ligne. */
+@media (max-width: 359px) {
+  .btn {
+    padding-inline: 8px;
+    font-size: 0.92rem;
+  }
 }
 
 .btn.big {
@@ -426,10 +425,82 @@ a {
   color: var(--emom);
 }
 
-/* Sélection de plusieurs WOD */
+/* Sélection de plusieurs WOD, ouverte depuis le menu « ⋯ » en haut à droite */
 
-.select-toggle {
+.brand:has(.menu) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.menu {
+  position: relative;
   flex: none;
+}
+
+.menu > summary {
+  width: 50px;
+  padding: 0;
+  font-size: 1.4rem;
+  line-height: 1;
+  list-style: none;
+  cursor: pointer;
+}
+
+.menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu[open] > summary {
+  border-color: var(--accent);
+}
+
+.menu-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--gutter));
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
+}
+
+.menu-list button {
+  min-height: 46px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: calc(var(--radius) - 6px);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-list button:hover:not(:disabled),
+.menu-list button:focus-visible {
+  background: var(--surface);
+}
+
+.menu-list button.danger {
+  color: var(--danger);
+}
+
+.menu-list button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.card.inert {
+  opacity: 0.4;
 }
 
 .card.selectable {
@@ -452,12 +523,12 @@ a {
 }
 
 .page.selecting {
-  padding-bottom: calc(env(safe-area-inset-bottom) + var(--tabs-height) + 200px);
+  padding-bottom: calc(env(safe-area-inset-bottom) + var(--tabs-height) + 150px);
 }
 
 /* La barre de sélection ouverte, les notifications passent au-dessus. */
 body:has(.select-bar:not([hidden])) .toast {
-  bottom: calc(env(safe-area-inset-bottom) + var(--tabs-height) + 190px);
+  bottom: calc(env(safe-area-inset-bottom) + var(--tabs-height) + 130px);
 }
 
 .select-bar {
@@ -484,8 +555,10 @@ body:has(.select-bar:not([hidden])) .toast {
 }
 
 .select-head .btn {
+  flex: none;
   min-height: 40px;
   padding: 6px 4px;
+  white-space: nowrap;
 }
 
 .select-actions {
@@ -493,8 +566,7 @@ body:has(.select-bar:not([hidden])) .toast {
   gap: 8px;
 }
 
-.select-actions .btn,
-.select-bar > .btn {
+.select-actions .btn {
   min-height: 46px;
   padding: 6px 8px;
   font-size: 0.92rem;
@@ -856,7 +928,6 @@ textarea {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85rem;
 }
-
 .form {
   display: flex;
   flex-direction: column;
@@ -911,6 +982,13 @@ textarea {
 
 .segmented .btn {
   padding-inline: 6px;
+}
+
+/* Petit téléphone : « 4 semaines » tient sur une ligne. */
+@media (max-width: 359px) {
+  .segmented .btn {
+    padding-inline: 2px;
+  }
 }
 
 /* Création et modification d'un WOD */
@@ -1026,6 +1104,8 @@ textarea {
   flex: 1;
   flex-direction: column;
   min-width: 0;
+  /* Sans bouton retour devant, le titre s'aligne sur la marge des pages. */
+  padding-left: 8px;
   line-height: 1.2;
 }
 
@@ -1236,9 +1316,10 @@ textarea {
   margin: 0 var(--gutter) 10px;
 }
 
+/* Onglet Coach : la saisie se pose sur la barre du bas. */
 .composer {
   position: sticky;
-  bottom: 0;
+  bottom: calc(env(safe-area-inset-bottom) + var(--tabs-height));
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -1275,11 +1356,36 @@ textarea {
 }
 
 .chat-privacy {
-  padding: 0 var(--gutter) calc(env(safe-area-inset-bottom) + 10px);
+  padding: 0 var(--gutter) calc(env(safe-area-inset-bottom) + var(--tabs-height) + 10px);
   background: var(--bg);
   color: var(--muted);
   font-size: 0.75rem;
   text-align: center;
+}
+
+/* Les notifications passent au-dessus de la saisie. */
+body:has(.composer) .toast {
+  bottom: calc(env(safe-area-inset-bottom) + var(--tabs-height) + 80px);
+}
+
+/*
+ * Pendant la saisie, la barre du bas s'efface : le clavier monte jusqu'à la saisie, sans les
+ * onglets coincés entre les deux.
+ */
+body:has(.composer textarea:focus) .tabs {
+  display: none;
+}
+
+body:has(.composer textarea:focus) .composer {
+  bottom: 0;
+}
+
+body:has(.composer textarea:focus) .chat-privacy {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
+}
+
+body:has(.composer textarea:focus) .toast {
+  bottom: calc(env(safe-area-inset-bottom) + 80px);
 }
 
 .how {
@@ -1385,19 +1491,108 @@ textarea {
   backdrop-filter: blur(12px);
 }
 
+/*
+ * Quatre cases égales sur la largeur du contenu (560 px au plus, comme #app) : sur tablette et
+ * ordinateur, la barre s'aligne sur la page au lieu de s'étaler.
+ */
+.tabs {
+  padding-inline: max(0px, calc((100% - 560px) / 2));
+}
+
 .tab {
   display: flex;
-  flex: 1;
+  flex: 1 1 0;
   align-items: center;
   justify-content: center;
-  max-width: 187px;
   height: var(--tabs-height);
   color: var(--muted);
   font-weight: 650;
 }
 
-.tab[aria-current='page'] {
+.tab[aria-current='page'],
+.tab-menu[aria-expanded='true'] {
   color: var(--accent);
+}
+
+/* Le ☰ ouvre le menu des autres pages. */
+.tab-menu {
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Trois traits dessinés plutôt qu'un caractère : même rendu et même centrage sur tous les téléphones. */
+.tab-menu::before {
+  width: 22px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  box-shadow:
+    0 -7px currentColor,
+    0 7px currentColor;
+  content: '';
+}
+
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  background: rgb(0 0 0 / 0.55);
+}
+
+/* Panneau du ☰, posé sur la barre du bas. */
+.menu-sheet {
+  position: fixed;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom) + var(--tabs-height));
+  left: 0;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  max-width: 560px;
+  /* En paysage, le panneau défile plutôt que de passer sous le haut de l'écran. */
+  max-height: calc(100dvh - var(--tabs-height) - env(safe-area-inset-bottom) - env(safe-area-inset-top) - 12px);
+  margin: 0 auto;
+  padding: 8px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface-2);
+}
+
+.menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 12px;
+  border-radius: calc(var(--radius) - 6px);
+  color: var(--text);
+}
+
+.menu-item + .menu-item {
+  border-top: 1px solid var(--line);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.menu-item strong {
+  font-size: 1.05rem;
+}
+
+.menu-item span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.menu-item[aria-current='page'] strong {
+  color: var(--accent);
+}
+
+.menu-item:active,
+.menu-item:focus-visible {
+  background: var(--surface);
 }
 
 /* Chrono */
@@ -1689,7 +1884,7 @@ textarea {
   }
 }
 
-/* Progrès : tableau de bord */
+/* Suivi : tableau de bord */
 
 .dash-block {
   display: flex;
@@ -1755,7 +1950,8 @@ textarea {
 }
 
 .stat strong {
-  font-size: 1.6rem;
+  /* Réduit sur un petit écran pour qu'un « 10 h 30 » tienne dans son tiers de largeur. */
+  font-size: clamp(1.2rem, 6vw, 1.6rem);
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
   white-space: nowrap;
@@ -1939,14 +2135,27 @@ textarea {
   color: var(--good);
 }
 
-/* Objectifs en cours en tête de l'écran WOD : compte à rebours d'une course, jauge des autres. */
-.goal-banners {
+/* Objectifs en cours en tête de l'écran WOD : le plus proche, puis les autres à déplier. */
+.goal-banners,
+.goal-others-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.goal-others > summary {
+  padding: 4px 2px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.goal-others[open] > summary {
+  margin-bottom: 8px;
 }
 
 .goal-banner {

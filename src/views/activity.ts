@@ -183,7 +183,7 @@ export function activityFormView(id?: string, preset?: string): View | null {
   const el = h(
     'section',
     { class: 'page' },
-    pageHead(editing ? 'Modifier l’activité' : 'Ajouter une activité', { href: back, label: editing ? 'Retour' : 'Progrès' }),
+    pageHead(editing ? 'Modifier l’activité' : 'Ajouter une activité', { href: back, label: editing ? 'Retour' : 'Suivi' }),
     h(
       'form',
       { class: 'form', novalidate: true, onsubmit: submit },
@@ -242,7 +242,7 @@ export function activityView(id: string): View | null {
   const el = h(
     'section',
     { class: 'page' },
-    pageHead(dateLabel(activity.date), { href: '#/progress', label: 'Progrès' }),
+    pageHead(dateLabel(activity.date), { href: '#/progress', label: 'Suivi' }),
     h(
       'div',
       { class: 'scoreboard' },

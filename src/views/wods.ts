@@ -43,10 +43,16 @@ const MAX_ERRORS = 12;
 
 /** Recherche en cours sur l'écran WOD, conservée quand on revient d'une fiche. */
 let query = '';
-/** Section « Déjà faits » dépliée, conservée de la même façon. */
-let doneOpen = false;
 
 type Content = (HTMLElement | false)[];
+
+/** Actions groupées du menu « ⋯ » de l'écran WOD : chacune ouvre la sélection des WOD concernés. */
+type SelectMode = 'reschedule' | 'unplan' | 'delete';
+const SELECT_MODES: readonly { mode: SelectMode; menu: string; prompt: string }[] = [
+  { mode: 'reschedule', menu: 'Reprogrammer des WOD', prompt: 'WOD à reprogrammer' },
+  { mode: 'unplan', menu: 'Retirer des WOD du programme', prompt: 'Séances à retirer' },
+  { mode: 'delete', menu: 'Supprimer des WOD', prompt: 'WOD à supprimer' },
+];
 
 function wodCardContent(saved: SavedWod): Content {
   const done = resultsFor(saved.id);
@@ -306,8 +312,9 @@ function askPlanning(count: number): Promise<{ start: string; every: number } | 
 }
 
 export function wodListView(): View {
-  // L'écran WOD montre ce qui reste à faire : une séance faite quitte le programme pour l'historique,
-  // et les WOD déjà faits descendent dans « Déjà faits », du plus récemment fait au plus ancien.
+  // L'écran WOD montre ce qui reste à faire : une séance faite quitte le programme pour l'historique
+  // (« Toutes mes séances »). Les WOD déjà faits n'apparaissent qu'en cherchant, du plus récemment
+  // fait au plus ancien.
   const plan = visiblePlan().filter((row) => !row.done);
   const planned = new Set(plan.map((row) => row.saved.id));
   const library = [...getWods()].reverse().filter((saved) => !planned.has(saved.id));
@@ -326,10 +333,13 @@ export function wodListView(): View {
   const backup = backupStatus();
   const index = new Map(getWods().map((saved) => [saved.id, searchText(saved.wod)]));
 
-  // Mode sélection : séances du programme (« plan:id ») et WOD de la bibliothèque (« wod:id »).
-  let selecting = false;
+  // Sélection, ouverte depuis le menu « ⋯ » pour une action : séances du programme (« plan:id »)
+  // et WOD de la bibliothèque (« wod:id »).
+  let mode: SelectMode | null = null;
   const selected = new Set<string>();
   let visibleKeys: string[] = [];
+  /** Seules les séances du programme se retirent du programme. */
+  const selectable = (key: string) => mode !== 'unplan' || key.startsWith('plan:');
   const entryIds = () => [...selected].filter((key) => key.startsWith('plan:')).map((key) => key.slice(5));
   /** WOD sélectionnés hors du programme, sans date à venir, dans l'ordre de la liste. */
   const unplannedIds = () =>
@@ -359,36 +369,88 @@ export function wodListView(): View {
 
   const countEl = h('strong', { class: 'select-count' });
   const allBtn = h('button', { class: 'btn ghost', onclick: () => toggleAll() });
-  const rescheduleBtn = h('button', { class: 'btn grow', onclick: () => void reschedule() }, 'Reprogrammer');
-  const unplanBtn = h('button', { class: 'btn grow', onclick: unplanSelected }, 'Retirer du programme');
-  const deleteBtn = h('button', { class: 'btn block danger', onclick: () => void deleteSelected() }, 'Supprimer de la bibliothèque');
+  const actionBtn = h('button', { class: 'btn grow', onclick: runAction });
+  const cancelBtn = h('button', { class: 'btn', onclick: () => setMode(null) }, 'Annuler');
   const bar = h(
     'div',
     { class: 'select-bar', hidden: true },
     h('div', { class: 'select-head' }, countEl, allBtn),
-    h('div', { class: 'select-actions' }, rescheduleBtn, unplanBtn),
-    deleteBtn,
+    h('div', { class: 'select-actions' }, actionBtn, cancelBtn),
   );
-  const selectBtn = h('button', { class: 'btn select-toggle', onclick: () => setSelecting(!selecting) }, 'Sélectionner');
+
+  const menuToggle = h('summary', { class: 'btn', title: 'Actions sur plusieurs WOD', 'aria-label': 'Actions sur plusieurs WOD' }, '⋯');
+  const menu = h(
+    'details',
+    { class: 'menu' },
+    menuToggle,
+    h(
+      'div',
+      { class: 'menu-list' },
+      SELECT_MODES.map(({ mode: value, menu: label }) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: value === 'delete' ? 'danger' : '',
+            disabled: value === 'unplan' && plan.length === 0,
+            onclick: () => setMode(value),
+          },
+          label,
+        ),
+      ),
+    ),
+  );
+  // Le menu se ferme d'un clic à côté ou avec Échap, comme un menu.
+  function onOutside(event: Event): void {
+    const escape = event instanceof KeyboardEvent && event.key === 'Escape';
+    if (!menu.isConnected || escape || (event.type === 'click' && !menu.contains(event.target as Node))) closeMenu();
+    if (escape && menu.isConnected) menuToggle.focus();
+  }
+  function closeMenu(): void {
+    menu.open = false;
+    document.removeEventListener('click', onOutside, true);
+    document.removeEventListener('keydown', onOutside);
+  }
+  menu.addEventListener('toggle', () => {
+    if (!menu.open) return closeMenu();
+    document.addEventListener('click', onOutside, true);
+    document.addEventListener('keydown', onOutside);
+  });
 
   function refreshBar(): void {
-    countEl.textContent = selected.size === 0 ? 'Aucun WOD sélectionné' : `${selected.size} ${accord(selected.size, 'sélectionné')}`;
+    if (!mode) return;
+    const action = SELECT_MODES.find((candidate) => candidate.mode === mode)!;
+    countEl.textContent = selected.size === 0 ? action.prompt : `${selected.size} ${accord(selected.size, 'sélectionné')}`;
     const allChosen = visibleKeys.length > 0 && visibleKeys.every((key) => selected.has(key));
     allBtn.textContent = allChosen ? 'Tout désélectionner' : 'Tout sélectionner';
-    // Des WOD sans date se planifient ; des séances du programme se reprogramment.
-    rescheduleBtn.textContent = unplannedIds().length > 0 ? 'Planifier' : 'Reprogrammer';
-    rescheduleBtn.disabled = selected.size === 0;
-    unplanBtn.disabled = entryIds().length === 0;
-    deleteBtn.disabled = wodIds().length === 0;
+    allBtn.disabled = visibleKeys.length === 0;
+    actionBtn.className = `btn grow ${mode === 'delete' ? 'danger' : 'primary'}`;
+    if (mode === 'reschedule') {
+      // Des WOD sans date se planifient ; des séances du programme se reprogramment.
+      actionBtn.textContent = unplannedIds().length > 0 ? 'Planifier' : 'Reprogrammer';
+      actionBtn.disabled = selected.size === 0;
+    } else if (mode === 'unplan') {
+      actionBtn.textContent = 'Retirer du programme';
+      actionBtn.disabled = entryIds().length === 0;
+    } else {
+      actionBtn.textContent = 'Supprimer';
+      actionBtn.disabled = wodIds().length === 0;
+    }
   }
 
-  function setSelecting(value: boolean): void {
-    selecting = value;
+  function setMode(value: SelectMode | null): void {
+    mode = value;
     selected.clear();
-    selectBtn.textContent = selecting ? 'Terminé' : 'Sélectionner';
-    bar.hidden = !selecting;
-    el.classList.toggle('selecting', selecting);
+    closeMenu();
+    bar.hidden = mode === null;
+    el.classList.toggle('selecting', mode !== null);
     renderLists();
+  }
+
+  function runAction(): void {
+    if (mode === 'reschedule') void reschedule();
+    else if (mode === 'unplan') unplanSelected();
+    else if (mode === 'delete') void deleteSelected();
   }
 
   function toggleAll(): void {
@@ -402,7 +464,9 @@ export function wodListView(): View {
 
   /** Carte cliquable vers la fiche, ou case à cocher en mode sélection. */
   function card(key: string, href: string, extraClass: string, content: Content): HTMLElement {
-    if (!selecting) return h('li', null, h('a', { class: `card ${extraClass}`, href }, content));
+    if (!mode) return h('li', null, h('a', { class: `card ${extraClass}`, href }, content));
+    // Une carte que l'action ne concerne pas reste visible, mais inerte.
+    if (!selectable(key)) return h('li', null, h('div', { class: `card inert ${extraClass}`, 'aria-disabled': 'true' }, content));
     const box = h('input', { type: 'checkbox', checked: selected.has(key), 'aria-label': 'Sélectionner' });
     box.addEventListener('change', () => {
       if (box.checked) selected.add(key);
@@ -417,36 +481,16 @@ export function wodListView(): View {
     const planFound = plan.filter((row) => found(row.saved.id));
     const redoFound = toRedo.filter((reference) => found(reference.saved.id));
     const othersFound = others.filter((saved) => found(saved.id));
-    const finishedFound = finished.filter((saved) => found(saved.id));
-    // Une recherche déplie « Déjà faits » pour montrer tout ce qui correspond.
+    // Les WOD déjà faits se retrouvent dans « Toutes mes séances » ; ici, seule une recherche les montre.
     const searching = query.trim() !== '';
-    let shown = doneOpen || searching;
-    const openKeys = [
+    const finishedFound = searching ? finished.filter((saved) => found(saved.id)) : [];
+    // « Tout sélectionner » ne prend que les WOD visibles.
+    visibleKeys = [
       ...planFound.map((row) => `plan:${row.entry.id}`),
       ...redoFound.map((reference) => `wod:${reference.saved.id}`),
       ...othersFound.map((saved) => `wod:${saved.id}`),
-    ];
-    const doneKeys = finishedFound.map((saved) => `wod:${saved.id}`);
-    visibleKeys = shown ? [...openKeys, ...doneKeys] : openKeys;
-
-    const doneSection = h(
-      'details',
-      { class: 'done-section', open: shown },
-      h('summary', { class: 'section-title' }, `Déjà faits (${finishedFound.length})`),
-      h(
-        'ul',
-        { class: 'cards' },
-        finishedFound.map((saved) => card(`wod:${saved.id}`, `#/wod/${saved.id}`, 'done', wodCardContent(saved))),
-      ),
-    );
-    doneSection.addEventListener('toggle', () => {
-      if (doneSection.open === shown) return;
-      shown = doneSection.open;
-      if (!searching) doneOpen = shown;
-      // « Tout sélectionner » ne prend que les WOD visibles.
-      visibleKeys = shown ? [...openKeys, ...doneKeys] : openKeys;
-      refreshBar();
-    });
+      ...finishedFound.map((saved) => `wod:${saved.id}`),
+    ].filter(selectable);
 
     lists.replaceChildren(
       h(
@@ -480,8 +524,15 @@ export function wodListView(): View {
         ],
         !searching &&
           planFound.length + redoFound.length + othersFound.length === 0 &&
-          h('p', { class: 'empty' }, 'Tout est fait ! Demande un nouveau WOD au coach, ou refais un WOD déjà fait.'),
-        finishedFound.length > 0 && doneSection,
+          h('p', { class: 'empty' }, 'Tout est fait ! Demande un nouveau WOD au coach, ou refais-en un depuis Toutes mes séances (menu ☰).'),
+        finishedFound.length > 0 && [
+          h('h2', { class: 'section-title' }, 'Déjà faits'),
+          h(
+            'ul',
+            { class: 'cards' },
+            finishedFound.map((saved) => card(`wod:${saved.id}`, `#/wod/${saved.id}`, 'done', wodCardContent(saved))),
+          ),
+        ],
         searching && planFound.length + redoFound.length + othersFound.length + finishedFound.length === 0 && [
           h('p', { class: 'empty' }, `Aucun WOD ne correspond à « ${query.trim()} ».`),
           h(
@@ -574,7 +625,7 @@ export function wodListView(): View {
     if (ids.length === 0) return;
     const confirmed = await choose(
       `Supprimer ${ids.length} WOD de la bibliothèque ?`,
-      'Ils sont aussi retirés du programme. Les séances déjà faites sont conservées dans Données › Toutes mes séances.',
+      'Ils sont aussi retirés du programme. Les séances déjà faites restent dans Toutes mes séances (menu ☰).',
       [
         { label: 'Supprimer', value: true, kind: 'danger' },
         { label: 'Annuler', value: false },
@@ -589,9 +640,8 @@ export function wodListView(): View {
   const el = h(
     'section',
     { class: 'page' },
-    h('header', { class: 'brand' }, h('h1', null, 'WOD', h('span', null, 'HARD'))),
+    h('header', { class: 'brand' }, h('h1', null, 'WOD', h('span', null, 'HARD')), getWods().length > 0 && menu),
     goalBanners(),
-    h('a', { class: 'btn primary block', href: '#/ask' }, 'Demander au coach'),
     h(
       'div',
       { class: 'row' },
@@ -611,7 +661,7 @@ export function wodListView(): View {
         h(
           'div',
           { class: 'row' },
-          h('button', { class: 'btn primary grow', onclick: () => void exportData() }, 'Exporter'),
+          h('button', { class: 'btn primary grow', onclick: exportData }, 'Exporter'),
           h(
             'button',
             {
@@ -626,7 +676,7 @@ export function wodListView(): View {
         ),
       ),
     getWods().length > 0
-      ? [h('div', { class: 'row' }, search, selectBtn), lists, bar]
+      ? [h('div', { class: 'row' }, search), lists, bar]
       : h(
           'p',
           { class: 'empty' },
@@ -701,7 +751,7 @@ export function addWodView(): View {
     h(
       'p',
       { class: 'lead' },
-      'Copie le JSON généré par ton projet Claude, puis colle-le ici : un WOD seul ou un programme de plusieurs WOD.',
+      'Copie le JSON généré par ton coach dans une autre appli, puis colle-le ici : un WOD seul ou un programme de plusieurs WOD.',
     ),
     h('button', { class: 'btn primary block', onclick: paste }, 'Coller depuis le presse-papiers'),
     input,
@@ -747,8 +797,8 @@ export function wodDetailView(id: string): View | null {
     const message =
       past.length > 0
         ? past.length > 1
-          ? `Les ${past.length} séances déjà faites sont conservées dans Données › Toutes mes séances.`
-          : 'La séance déjà faite est conservée dans Données › Toutes mes séances.'
+          ? `Les ${past.length} séances déjà faites restent dans Toutes mes séances (menu ☰).`
+          : 'La séance déjà faite reste dans Toutes mes séances (menu ☰).'
         : 'Ce WOD n’a pas encore été fait.';
     const confirmed = await choose(`Supprimer « ${wod.title} » ?`, message, [
       { label: 'Supprimer', value: true, kind: 'danger' },

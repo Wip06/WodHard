@@ -23,9 +23,9 @@ export interface CoachModel {
 
 /** Modèles proposés, du plus capable au plus économique. */
 export const MODELS: CoachModel[] = [
-  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', note: 'Le plus capable : le meilleur pour tes programmes.' },
-  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', note: 'Plus rapide, environ deux fois moins cher qu’Opus.' },
-  { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', note: 'Très rapide et très économique, pour des questions simples.' },
+  { id: 'claude-opus-5-5', label: 'Opus 5.5', note: 'Le plus capable : le meilleur pour tes programmes.' },
+  { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', note: 'Plus rapide, environ deux fois moins cher qu’Opus.' },
+  { id: 'claude-haiku-5-5', label: 'Haiku 5.5', note: 'Très rapide et très économique, pour des questions simples.' },
 ];
 export const DEFAULT_MODEL = 'claude-opus-5-5';
 
@@ -143,16 +143,16 @@ function coachError(error: unknown, mod: Sdk | undefined): CoachError {
   if (!mod) return new CoachError('Impossible de joindre le coach : vérifie ta connexion, puis réessaie.');
   const Anthropic = mod.default;
   if (error instanceof Anthropic.APIConnectionTimeoutError) {
-    return new CoachError('Claude met trop de temps à répondre : réessaie.');
+    return new CoachError('Le coach met trop de temps à répondre : réessaie.');
   }
   if (error instanceof Anthropic.APIConnectionError) {
-    return new CoachError('Connexion à Claude impossible : vérifie ton réseau, puis réessaie.');
+    return new CoachError('Connexion au coach impossible : vérifie ton réseau, puis réessaie.');
   }
   if (!(error instanceof Anthropic.APIError)) return new CoachError('Erreur inattendue : réessaie.');
   const detail = apiDetail(error);
   const explained = detail ? ` (${detail})` : '';
   if (error instanceof Anthropic.AuthenticationError) {
-    return new CoachError('Clé API refusée : vérifie-la dans les réglages du coach. Une clé Claude commence par « sk-ant- ».', 401);
+    return new CoachError('Clé API refusée : vérifie-la dans les réglages du coach. Une clé Anthropic commence par « sk-ant- ».', 401);
   }
   if (error instanceof Anthropic.PermissionDeniedError) {
     return new CoachError(`Cette clé n’a pas accès à ce modèle${explained}. Vérifie ton compte sur console.anthropic.com.`, 403);
@@ -165,12 +165,12 @@ function coachError(error: unknown, mod: Sdk | undefined): CoachError {
   }
   if (error instanceof Anthropic.BadRequestError) {
     // Un crédit épuisé arrive aussi sous cette forme : l'explication de l'API le dit.
-    return new CoachError(`Claude a refusé la demande${explained}. Si ton crédit est épuisé, recharge-le sur console.anthropic.com.`, 400);
+    return new CoachError(`Le coach a refusé la demande${explained}. Si ton crédit est épuisé, recharge-le sur console.anthropic.com.`, 400);
   }
   if (error.status === 529 || error instanceof Anthropic.InternalServerError) {
-    return new CoachError('Claude est surchargé pour le moment : réessaie un peu plus tard.', error.status);
+    return new CoachError('Le coach est surchargé pour le moment : réessaie un peu plus tard.', error.status);
   }
-  return new CoachError(`Erreur de l’API Claude${error.status ? ` (${error.status})` : ''}${explained} : réessaie.`, error.status);
+  return new CoachError(`Erreur du coach${error.status ? ` (${error.status})` : ''}${explained} : réessaie.`, error.status);
 }
 
 /**
@@ -228,12 +228,12 @@ export async function generate(settings: CoachSettings, turns: Turn[], options: 
     throw coachError(error, mod);
   }
   if (message.stop_reason === 'refusal') {
-    throw new CoachError('Claude a décliné cette demande : reformule-la autrement.');
+    throw new CoachError('Le coach a décliné cette demande : reformule-la autrement.');
   }
   const text = replyText(message);
   if (text === '') {
     throw new CoachError(
-      message.stop_reason === 'max_tokens' ? 'Réponse trop longue, coupée avant la fin : demande plus court.' : 'Claude n’a renvoyé aucune réponse : réessaie.',
+      message.stop_reason === 'max_tokens' ? 'Réponse trop longue, coupée avant la fin : demande plus court.' : 'Le coach n’a renvoyé aucune réponse : réessaie.',
     );
   }
   return text;

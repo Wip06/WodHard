@@ -24,7 +24,7 @@ const LIMITS = [
 ];
 const DEFAULT_LIMIT = '30';
 
-export async function exportData(): Promise<void> {
+async function saveBackupFile(): Promise<void> {
   const file = new File([JSON.stringify(buildBackup(), null, 2)], `wodhard-${today()}.json`, {
     type: 'application/json',
   });
@@ -33,12 +33,34 @@ export async function exportData(): Promise<void> {
   render();
 }
 
+/** La sauvegarde copiée compte comme exportée : le rappel s'arrête, à toi de la coller en lieu sûr. */
+async function copyBackup(): Promise<void> {
+  if (!(await copyText(JSON.stringify(buildBackup(), null, 2)))) return toast('Copie impossible');
+  markExported();
+  render();
+  toast('Sauvegarde copiée : colle-la tout de suite dans un endroit sûr (notes, mail…)');
+}
+
+/**
+ * Exporter, depuis les Réglages ou le rappel de l'écran WOD : un fichier, ou le contenu à coller,
+ * comme pour l'import. Chaque choix agit dans son `run`, sur le toucher même : Safari refuse le
+ * partage et le presse-papiers après la fenêtre.
+ */
+export function exportData(): void {
+  void choose('Exporter mes données', 'Un fichier à garder, ou le contenu à coller ailleurs ?', [
+    { label: 'Enregistrer un fichier', value: null, kind: 'primary', run: () => void saveBackupFile() },
+    { label: 'Copier dans le presse-papiers', value: null, run: () => void copyBackup() },
+    { label: 'Annuler', value: null },
+  ]);
+}
+
 /** Ouverte depuis l'écran d'accueil (appli installée) plutôt que dans un onglet du navigateur. */
 const installed = () =>
   window.matchMedia('(display-mode: standalone)').matches ||
   (navigator as Navigator & { standalone?: boolean }).standalone === true;
 
-export function dataView(): View {
+/** Réglages : coach, sauvegarde et import, copie de l'historique, chiffres de l'appli. */
+export function settingsView(): View {
   const exported = lastExport();
   const errorBox = h('div', { class: 'errors', role: 'alert', hidden: true });
   const persisted = h('span', null, '…');
@@ -59,11 +81,10 @@ export function dataView(): View {
   if (asked) void asked.then(showProtection, () => showProtection(false));
   else showProtection(false);
 
-  const importFile = async () => {
-    const file = picker.files?.[0];
-    picker.value = '';
-    if (!file) return;
-    const checked = parseBackup(await file.text());
+  /** Vérifie une sauvegarde, venue d'un fichier ou collée, puis propose de la fusionner ou de tout remplacer. */
+  const importText = async (text: string) => {
+    errorBox.hidden = true;
+    const checked = parseBackup(text);
     if (!checked.ok) {
       const extra = checked.errors.length - MAX_ERRORS;
       errorBox.replaceChildren(
@@ -94,6 +115,50 @@ export function dataView(): View {
     render();
   };
 
+  const importFile = async () => {
+    const file = picker.files?.[0];
+    picker.value = '';
+    if (file) await importText(await file.text());
+  };
+
+  // Si le presse-papiers est refusé, on colle à la main dans une zone de texte.
+  const pasteBox = h('textarea', {
+    class: 'json-input',
+    rows: 6,
+    placeholder: 'Colle ici le contenu de la sauvegarde',
+    spellcheck: 'false',
+    autocapitalize: 'off',
+    autocomplete: 'off',
+    'aria-label': 'Contenu de la sauvegarde',
+  });
+  const manualPaste = h(
+    'div',
+    { class: 'stack', hidden: true },
+    pasteBox,
+    h(
+      'button',
+      {
+        class: 'btn block',
+        onclick: () => (pasteBox.value.trim() === '' ? toast('Colle d’abord le contenu de la sauvegarde') : void importText(pasteBox.value)),
+      },
+      'Importer le texte collé',
+    ),
+  );
+
+  const paste = async () => {
+    let text: string;
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      toast('Presse-papiers inaccessible : colle le contenu dans la zone de texte');
+      manualPaste.hidden = false;
+      pasteBox.focus();
+      return;
+    }
+    if (text.trim() === '') return toast('Le presse-papiers est vide');
+    await importText(text);
+  };
+
   const picker = h('input', {
     type: 'file',
     accept: 'application/json,.json',
@@ -117,50 +182,72 @@ export function dataView(): View {
   const el = h(
     'section',
     { class: 'page' },
-    pageHead('Données'),
+    pageHead('Réglages'),
     h(
-      'p',
-      { class: 'lead' },
-      'Tes WOD et tes scores sont stockés uniquement sur cet appareil. Exporte une sauvegarde de temps en temps.',
-    ),
-    h(
-      'dl',
-      { class: 'facts' },
-      h('dt', null, 'WOD enregistrés'),
-      h('dd', null, getWods().length),
-      h('dt', null, 'Séances de WOD'),
-      h('dd', null, sortedResults().length),
-      h('dt', null, 'Autres sports'),
-      h('dd', null, sortedActivities().length),
-      h('dt', null, 'Dernière sauvegarde'),
-      h('dd', null, exported ? new Date(exported).toLocaleDateString('fr-FR', { dateStyle: 'long' }) : 'jamais'),
-      h('dt', null, 'Séances non sauvegardées'),
-      h('dd', null, backupStatus().unsaved),
-      h('dt', null, 'Stockage protégé'),
-      h('dd', null, persisted),
-    ),
-    installHint,
-    sessions > 0 &&
-      h(
-        'div',
-        { class: 'stack' },
-        h('a', { class: 'btn block', href: '#/history' }, `Toutes mes séances (${sessions})`),
-        h('button', { class: 'btn block', onclick: () => void copy() }, 'Copier mon historique pour Claude'),
-        h('label', { class: 'inline-field' }, h('span', null, 'Séances copiées, en JSON :'), limit),
-      ),
-    h(
-      'div',
+      'section',
       { class: 'stack' },
-      h('button', { class: 'btn primary block', onclick: () => void exportData() }, 'Exporter mes données'),
-      h('button', { class: 'btn block', onclick: () => picker.click() }, 'Importer une sauvegarde'),
+      h('h2', { class: 'section-title' }, 'Coach'),
+      h('a', { class: 'btn block', href: '#/coach' }, coachReady(loadCoach()) ? 'Coach : configuré ›' : 'Configurer le coach ›'),
+    ),
+    h(
+      'section',
+      { class: 'stack' },
+      h('h2', { class: 'section-title' }, 'Sauvegarde'),
+      h('p', { class: 'lead' }, 'Tes WOD et tes scores sont stockés uniquement sur cet appareil. Exporte une sauvegarde de temps en temps.'),
       h(
-        'a',
-        { class: 'btn block', href: '#/coach' },
-        coachReady(loadCoach()) ? 'Coach Claude : configuré' : 'Configurer le coach Claude',
+        'dl',
+        { class: 'facts' },
+        h('dt', null, 'Dernière sauvegarde'),
+        h('dd', null, exported ? new Date(exported).toLocaleDateString('fr-FR', { dateStyle: 'long' }) : 'jamais'),
+        h('dt', null, 'Séances non sauvegardées'),
+        h('dd', null, backupStatus().unsaved),
+        h('dt', null, 'Stockage protégé'),
+        h('dd', null, persisted),
       ),
+      installHint,
+      h('button', { class: 'btn primary block', onclick: exportData }, 'Exporter mes données'),
+      h(
+        'button',
+        {
+          class: 'btn block',
+          // Chaque choix agit dans son `run`, sur le toucher même : la réponse de la boîte ne sert pas.
+          onclick: () =>
+            void choose('Importer une sauvegarde', 'D’où vient ta sauvegarde ?', [
+              { label: 'Choisir un fichier', value: null, kind: 'primary', run: () => picker.click() },
+              { label: 'Coller depuis le presse-papiers', value: null, run: () => void paste() },
+              { label: 'Annuler', value: null },
+            ]),
+        },
+        'Importer une sauvegarde',
+      ),
+      manualPaste,
       picker,
       errorBox,
     ),
+    sessions > 0 &&
+      h(
+        'section',
+        { class: 'stack' },
+        h('h2', { class: 'section-title' }, 'Coach dans une autre appli'),
+        h('p', { class: 'hint left' }, 'Copie ton historique, colle-le dans la conversation de ton coach, puis rapporte sa réponse avec « Coller un WOD ».'),
+        h('button', { class: 'btn block', onclick: () => void copy() }, 'Copier mon historique pour le coach'),
+        h('label', { class: 'inline-field' }, h('span', null, 'Séances copiées, en JSON :'), limit),
+      ),
+    h(
+      'section',
+      { class: 'stack' },
+      h('h2', { class: 'section-title' }, 'En bref'),
+      h(
+        'dl',
+        { class: 'facts' },
+        h('dt', null, 'WOD enregistrés'),
+        h('dd', null, getWods().length),
+        h('dt', null, 'Séances de WOD'),
+        h('dd', null, sortedResults().length),
+        h('dt', null, 'Autres sports'),
+        h('dd', null, sortedActivities().length),
+      ),
+    ),
   );
-  return { el, tab: 'data' };
+  return { el, tab: 'menu' };
 }

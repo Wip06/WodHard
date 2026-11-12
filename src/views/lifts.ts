@@ -6,7 +6,7 @@ import { sortedResults } from '../store';
 import { goalLinks, sameLiftGoal } from './goals';
 import { pageHead } from './parts';
 
-/** Exercices montrés dans l'onglet Progrès ; les autres sont sur la page « Mes charges ». */
+/** Exercices montrés dans l'onglet Suivi ; les autres sont sur la page « Mes charges ». */
 const BLOCK_MAX = 6;
 const SPARK_MAX = 10;
 
@@ -65,7 +65,7 @@ function liftRow(lift: Lift): HTMLElement {
   );
 }
 
-/** Bloc « Charges » de l'onglet Progrès : les exercices de force les plus récents. */
+/** Bloc « Charges » de l'onglet Suivi : les exercices de force les plus récents. */
 export function liftsBlock(): HTMLElement | false {
   const lifts = liftsOf(sortedResults());
   if (lifts.length === 0) return false;
@@ -84,7 +84,7 @@ export function liftsView(): View {
   const el = h(
     'section',
     { class: 'page' },
-    pageHead('Mes charges', { href: '#/progress', label: 'Progrès' }),
+    pageHead('Mes charges', { href: '#/progress', label: 'Suivi' }),
     lifts.length > 0
       ? h('section', { class: 'dash-block' }, h('ul', { class: 'repeats' }, lifts.map(liftRow)))
       : h('p', { class: 'empty' }, 'Aucune séance de force pour l’instant : tes charges apparaîtront ici.'),
@@ -102,7 +102,7 @@ export function liftView(key: string): View | null {
   const el = h(
     'section',
     { class: 'page' },
-    pageHead(lift.name, { href: '#/progress', label: 'Progrès' }),
+    pageHead(lift.name, { href: '#/progress', label: 'Suivi' }),
     h(
       'dl',
       { class: 'facts' },

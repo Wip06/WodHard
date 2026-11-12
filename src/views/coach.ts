@@ -5,7 +5,7 @@ import { field, pageHead } from './parts';
 
 const CONSOLE = 'https://console.anthropic.com/';
 
-/** Réglages du coach Claude : clé API, modèle et profil, gardés sur cet appareil. */
+/** Réglages du coach : clé API, modèle et profil, gardés sur cet appareil. */
 export function coachView(): View {
   const saved = loadCoach();
 
@@ -15,7 +15,7 @@ export function coachView(): View {
     autocapitalize: 'off',
     spellcheck: 'false',
     placeholder: 'sk-ant-…',
-    'aria-label': 'Clé API Claude',
+    'aria-label': 'Clé API',
   });
   key.value = saved.key;
 
@@ -88,16 +88,16 @@ export function coachView(): View {
   const el = h(
     'section',
     { class: 'page' },
-    pageHead('Coach Claude', { href: '#/data', label: 'Données' }),
-    h('p', { class: 'lead' }, 'Le coach crée tes WOD et répond à tes questions dans l’appli, avec l’API Claude d’Anthropic.'),
+    pageHead('Coach', { href: '#/settings', label: 'Réglages' }),
+    h('p', { class: 'lead' }, 'Le coach crée tes WOD et répond à tes questions dans l’appli, avec l’API d’Anthropic.'),
     h(
       'div',
       { class: 'notice' },
-      h('p', null, 'L’API est payante, à l’usage : chaque message est facturé sur ton compte Anthropic. Elle n’est pas comprise dans un abonnement Claude (Pro ou Max).'),
+      h('p', null, 'L’API est payante, à l’usage : chaque message est facturé sur ton compte Anthropic. Elle n’est pas comprise dans les abonnements Pro ou Max d’Anthropic.'),
     ),
     saved.key === '' &&
       saved.instructions !== '' &&
-      h('p', { class: 'hint left' }, 'Ton profil est conservé : il ne manque que ta clé Claude.'),
+      h('p', { class: 'hint left' }, 'Ton profil est conservé : il ne manque que ta clé API.'),
     h(
       'ol',
       { class: 'steps' },
@@ -130,5 +130,5 @@ export function coachView(): View {
     ),
     saved.key !== '' && h('button', { class: 'btn ghost danger block', onclick: () => void reset() }, 'Effacer les réglages du coach'),
   );
-  return { el, tab: 'data' };
+  return { el, tab: 'menu' };
 }

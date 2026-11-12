@@ -206,7 +206,7 @@ export function chronoView(): View {
     summary,
     h('button', { class: 'btn primary big block', onclick: start }, 'Démarrer'),
   );
-  return { el, tab: 'chrono' };
+  return { el, tab: 'menu' };
 }
 
 export function chronoRunView(): View {
