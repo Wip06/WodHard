@@ -18,7 +18,8 @@
   --good: #4ade80;
   --radius: 14px;
   --gutter: 16px;
-  --tabs-height: 56px;
+  /* 48 px : la taille d'une barre d'onglets native, au-dessus des 44 px conseillés pour le toucher. */
+  --tabs-height: 48px;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
